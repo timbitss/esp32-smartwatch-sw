@@ -7,6 +7,9 @@
 
 extern "C" void app_main(void);
 
+// Unique component tag for logging data.
+static const char *TAG = "APP_MAIN";
+
 void app_main(void)
 {
     constexpr int sda_io_num = GPIO_NUM_21;
@@ -24,4 +27,11 @@ void app_main(void)
     i2c_conf.clk_flags = 0;
 
     I2C i2c_bus(port_num, &i2c_conf);
+
+    constexpr uint8_t dev_addr = 0x68;
+    uint8_t data = 0;
+
+    i2c_bus.ReadBytes(dev_addr, 0x0E, 1, &data);
+    ESP_LOGI(TAG, "Ctrl reg: %x", data);
+
 }

@@ -6,6 +6,11 @@
 
 #include <string.h>
 #include "DS3231M.h"
+#include "I2C.h"
+#include "esp_log.h"
+
+// Unique component tag for data logging.
+static const char* TAG = "DS3231M";
 
 // Number of days in each month.
 static const uint8_t days_in_month[] = {31, 28, 31, 30, 31, 30,
@@ -321,15 +326,13 @@ TimeSpan TimeSpan::operator-(const TimeSpan &right)
     return TimeSpan(_seconds - right._seconds);
 } // of overloaded subtract
 
-bool DS3231M::begin(const uint32_t i2cSpeed)
+bool DS3231M::begin()
 {
     /*!
    @brief     starts I2C communications with the device
    @param[in] i2cSpeed I2C Speed to use for communications
    @return    Boolean status of the initialization
   */
-    Wire.begin();                               // Start I2C as master device
-    Wire.setClock(i2cSpeed);                    // Set I2C clock speed
     Wire.beginTransmission(DS3231M_ADDRESS);    // Address the DS3231M
     uint8_t errorCode = Wire.endTransmission(); // See if there's a device present
     if (errorCode == 0)                         // If we have a DS3231M

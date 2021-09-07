@@ -45,6 +45,7 @@
 #pragma once
 
 #include <stdint.h>
+#include "I2C.h"
 
 /**************************************************************************************************
 ** Declare enumerated types                                                                      **
@@ -168,7 +169,7 @@ protected:
 class DS3231M
 {
 public:
-    DS3231M(){};
+    DS3231M(const I2C* i2c_bus) : _i2c_bus(i2c_bus) {};
     ~DS3231M(){};
 
     bool begin(const uint32_t i2cSpeed = I2C_STANDARD_MODE); // Start I2C Communications
@@ -194,8 +195,10 @@ private:
     void writeByte(const uint8_t addr, const uint8_t data); // Write 1 byte at I2Caddress
     uint8_t bcd2int(const uint8_t bcd);                     // convert BCD digits to integer
     uint8_t int2bcd(const uint8_t dec);                     // convert integer to BCD
+    
     uint8_t _TransmissionStatus = 0;                        // Status of I2C transmission
     uint32_t _SetUnixTime = 0;                              // UNIXtime for clock last set
     uint8_t _ss, _mm, _hh, _d, _m;                          // Define date components
-    uint16_t _y;                                            // Define date components
-};                                                          // of DS3231M class definition
+    uint16_t _y;
+    I2C const * const _i2c_bus;
+};                                                         
