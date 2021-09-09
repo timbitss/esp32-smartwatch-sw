@@ -38,16 +38,46 @@ I2C::I2C(i2c_port_t i2c_port_num, const i2c_config_t *i2c_conf)
 }
 
 /**
+ * @brief Test if a device is connected to the I2C bus.
+ * 
+ * @param device_addr Device address.
+ * @return true: Device acknowledged write request.  
+ *        false: Device did not acknowledge write request. 
+ */
+bool I2C::Test(uint8_t device_addr)
+{
+    // Create I2C command queue.
+    i2c_cmd_handle = i2c_cmd_link_create();
+    assert(i2c_cmd_handle != NULL);
+
+    // Prepend ~W bit to device address.
+    uint8_t device_addr_write = (uint8_t)device_addr << 1;
+
+    // Add I2C commands to queue.
+    i2c_master_start(i2c_cmd_handle);                               // Start transmission.
+    i2c_master_write_byte(i2c_cmd_handle, device_addr_write, true); // Request write operation on device
+                                                                    // with acknowledgement check.
+    i2c_master_stop(i2c_cmd_handle);                                // Stop transmission.
+
+    // Execute I2C read (blocking) w/ timeout.
+    esp_err_t err = i2c_master_cmd_begin(i2c_port, i2c_cmd_handle, pdMS_TO_TICKS(1000));
+
+    // Delete command queue.
+    i2c_cmd_link_delete(i2c_cmd_handle);
+    return err == ESP_OK ? true : false;
+}
+
+/**
  * @brief Read variable number of bytes from an I2C device.
  * 
  * @param[in] device_addr Device address (not including R/~W bit).
  * @param[in] reg_addr    Register address.
  * @param[in] len         Number of bytes to read.
  * @param[out] data       Buffer to store read data.
- * @return true: Byte(s) was read successfully. 
- *         false: Byte(s) was not read successfully.
+ * @return ESP_OK: Byte(s) was read successfully. 
+ *         ESP_ERR: Byte(s) was not read successfully.
  */
-bool I2C::ReadBytes(uint8_t device_addr, uint8_t reg_addr, size_t len, uint8_t *data)
+esp_err_t I2C::ReadBytes(uint8_t device_addr, uint8_t reg_addr, size_t len, uint8_t *data)
 {
     // Create I2C command queue.
     i2c_cmd_handle = i2c_cmd_link_create();
@@ -73,11 +103,11 @@ bool I2C::ReadBytes(uint8_t device_addr, uint8_t reg_addr, size_t len, uint8_t *
     i2c_master_stop(i2c_cmd_handle); // Stop transmission.
 
     // Execute I2C read (blocking) w/ timeout.
-    bool err = i2c_master_cmd_begin(i2c_port, i2c_cmd_handle, pdMS_TO_TICKS(1000));
+    esp_err_t err = i2c_master_cmd_begin(i2c_port, i2c_cmd_handle, pdMS_TO_TICKS(1000));
 
     // Delete command queue.
     i2c_cmd_link_delete(i2c_cmd_handle);
-    return !err;
+    return err;
 }
 
 /**
@@ -86,10 +116,10 @@ bool I2C::ReadBytes(uint8_t device_addr, uint8_t reg_addr, size_t len, uint8_t *
  * @param device_addr Device address (not including R/~W bit).
  * @param reg_addr    Register address.
  * @param data        Byte to write to register.
- * @return true:      Byte successfully written to register.
- *        false:      Byte was not successfully written to register.
+ * @return ESP_OK:    Byte successfully written to register.
+ *         ESP_ERR_:   Byte was not successfully written to register.
  */
-bool I2C::WriteByte(uint8_t device_addr, uint8_t reg_addr, uint8_t data)
+esp_err_t I2C::WriteByte(uint8_t device_addr, uint8_t reg_addr, uint8_t data)
 {
     // Create I2C command queue.
     i2c_cmd_handle = i2c_cmd_link_create();
@@ -99,16 +129,16 @@ bool I2C::WriteByte(uint8_t device_addr, uint8_t reg_addr, uint8_t data)
     uint8_t device_addr_write = (uint8_t)device_addr << 1;
 
     // Add I2C commands to queue.
-    i2c_master_start(i2c_cmd_handle);                              // Start transmission.
+    i2c_master_start(i2c_cmd_handle);                               // Start transmission.
     i2c_master_write_byte(i2c_cmd_handle, device_addr_write, true); // Request write operation on device.
     i2c_master_write_byte(i2c_cmd_handle, (uint8_t)reg_addr, true); // Indicate register to write to.
     i2c_master_write_byte(i2c_cmd_handle, data, true);              // Write data byte to register.
     i2c_master_stop(i2c_cmd_handle);                                // Stop transmission.
 
     // Execute I2C write (blocking) w/ timeout.
-    bool err = i2c_master_cmd_begin(i2c_port, i2c_cmd_handle, pdMS_TO_TICKS(1000));
+    esp_err_t err = i2c_master_cmd_begin(i2c_port, i2c_cmd_handle, pdMS_TO_TICKS(1000));
 
     // Delete command queue.
     i2c_cmd_link_delete(i2c_cmd_handle);
-    return !err;
+    return err;
 }

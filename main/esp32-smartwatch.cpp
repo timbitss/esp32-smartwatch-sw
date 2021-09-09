@@ -28,10 +28,15 @@ void app_main(void)
 
     I2C i2c_bus(port_num, &i2c_conf);
 
-    constexpr uint8_t dev_addr = 0x68;
+    constexpr uint8_t dev_addr = 0x69;
     uint8_t data = 0;
 
-    i2c_bus.ReadBytes(dev_addr, 0x0E, 1, &data);
-    ESP_LOGI(TAG, "Ctrl reg: %x", data);
-
+    if(i2c_bus.Test(dev_addr))
+    {
+        ESP_LOGI(TAG, "Successfully connected to DS3231M");        
+    }
+    else
+    {
+        ESP_LOGI(TAG, "DS3231M not connected");
+    }
 }
