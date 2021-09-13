@@ -22,12 +22,16 @@
 #ifndef _RTCLIB_H_
 #define _RTCLIB_H_
 
+#include <string>
 #include "I2C.h"
+
+using std::string;
+
 class TimeSpan;
 
-/** Registers */
+/** RTC Registers */
 #define DS3231_ADDRESS 0x68   ///< I2C address for DS3231
-#define DS3231_TIME 0x00      ///< Time register
+#define DS3231_TIME 0x00      ///< Time register (starting address)
 #define DS3231_ALARM1 0x07    ///< Alarm 1 register
 #define DS3231_ALARM2 0x0B    ///< Alarm 2 register
 #define DS3231_CONTROL 0x0E   ///< Control register
@@ -65,7 +69,6 @@ public:
            uint8_t min = 0, uint8_t sec = 0);
   DateTime(const DateTime &copy);
   DateTime(const char *date, const char *time);
-  DateTime(const __FlashStringHelper *date, const __FlashStringHelper *time);
   DateTime(const char *iso8601date);
   bool isValid() const;
   char *toString(char *buffer);
@@ -125,7 +128,7 @@ public:
     TIMESTAMP_TIME, //!< `hh:mm:ss`
     TIMESTAMP_DATE  //!< `YYYY-MM-DD`
   };
-  String timestamp(timestampOpt opt = TIMESTAMP_FULL);
+  string timestamp(timestampOpt opt = TIMESTAMP_FULL);
 
   DateTime operator+(const TimeSpan &span);
   DateTime operator-(const TimeSpan &span);
@@ -236,15 +239,6 @@ protected:
   int32_t _seconds; ///< Actual TimeSpan value is stored as seconds
 };
 
-/** DS3231 SQW pin mode settings */
-enum Ds3231SqwPinMode {
-  DS3231_OFF = 0x1C,            /**< Off */
-  DS3231_SquareWave1Hz = 0x00,  /**<  1Hz square wave */
-  DS3231_SquareWave1kHz = 0x08, /**<  1kHz square wave */
-  DS3231_SquareWave4kHz = 0x10, /**<  4kHz square wave */
-  DS3231_SquareWave8kHz = 0x18  /**<  8kHz square wave */
-};
-
 /** DS3231 Alarm modes for alarm 1 */
 enum Ds3231Alarm1Mode {
   DS3231_A1_PerSecond = 0x0F, /**< Alarm once per second */
@@ -271,7 +265,7 @@ enum Ds3231Alarm2Mode {
 
 /**************************************************************************/
 /*!
-    @brief  RTC based on the DS3231 chip connected via I2C and the Wire library
+    @brief  RTC based on the DS3231 chip connected via I2C.
 */
 /**************************************************************************/
 class RTC_DS3231 {
@@ -280,8 +274,6 @@ public:
   void adjust(const DateTime &dt);
   bool lostPower(void);
   DateTime now();
-  Ds3231SqwPinMode readSqwPinMode();
-  void writeSqwPinMode(Ds3231SqwPinMode mode);
   bool setAlarm1(const DateTime &dt, Ds3231Alarm1Mode alarm_mode);
   bool setAlarm2(const DateTime &dt, Ds3231Alarm2Mode alarm_mode);
   void disableAlarm(uint8_t alarm_num);
@@ -290,7 +282,7 @@ public:
   void enable32K(void);
   void disable32K(void);
   bool isEnabled32K(void);
-  float getTemperature(); // in Celsius degree
+  float getTemperature(); // in Celsius degrees
 
 protected:
   I2C *I2C_bus; ///< I2C bus connected to the RTC

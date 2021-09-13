@@ -16,8 +16,8 @@ public:
     I2C(i2c_port_t i2c_port_num, const i2c_config_t *i2c_conf);
 
     bool Test(uint8_t device_addr);
-    esp_err_t ReadBytes(uint8_t device_addr, uint8_t reg_addr, size_t len, uint8_t* data);
-    esp_err_t WriteByte(uint8_t device_addr, uint8_t reg_addr, uint8_t data);
+    esp_err_t ReadBytes(uint8_t device_addr, uint8_t reg_addr, size_t len, uint8_t *data);
+    esp_err_t WriteBytes(uint8_t device_addr, uint8_t reg_addr, size_t len, const uint8_t *data);
 
 private:
     i2c_port_t i2c_port;             // I2C Port Number.
