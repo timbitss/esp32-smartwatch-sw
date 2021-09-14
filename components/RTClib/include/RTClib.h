@@ -128,7 +128,7 @@ public:
     TIMESTAMP_TIME, //!< `hh:mm:ss`
     TIMESTAMP_DATE  //!< `YYYY-MM-DD`
   };
-  string timestamp(timestampOpt opt = TIMESTAMP_FULL);
+  const char* timestamp(timestampOpt opt = TIMESTAMP_FULL);
 
   DateTime operator+(const TimeSpan &span);
   DateTime operator-(const TimeSpan &span);
@@ -274,14 +274,12 @@ public:
   void adjust(const DateTime &dt);
   bool lostPower(void);
   DateTime now();
-  bool setAlarm1(const DateTime &dt, Ds3231Alarm1Mode alarm_mode);
-  bool setAlarm2(const DateTime &dt, Ds3231Alarm2Mode alarm_mode);
+  void activateIntOutput();
+  void setAlarm1(const DateTime &dt, Ds3231Alarm1Mode alarm_mode);
+  void setAlarm2(const DateTime &dt, Ds3231Alarm2Mode alarm_mode);
   void disableAlarm(uint8_t alarm_num);
   void clearAlarm(uint8_t alarm_num);
   bool alarmFired(uint8_t alarm_num);
-  void enable32K(void);
-  void disable32K(void);
-  bool isEnabled32K(void);
   float getTemperature(); // in Celsius degrees
 
 protected:

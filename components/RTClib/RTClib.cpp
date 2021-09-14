@@ -55,7 +55,7 @@ using std::min;
 using std::string;
 
 // Unique component tag for debugging.
-static const char* TAG = "RTClib";
+static const char *TAG = "RTClib";
 
 /**************************************************************************/
 /*!
@@ -685,7 +685,7 @@ bool DateTime::operator==(const DateTime &right) const
 
 /**************************************************************************/
 /*!
-    @brief  Return a ISO 8601 timestamp as a `String` object.
+    @brief  Return a ISO 8601 timestamp as a C-style string.
 
     The generated timestamp conforms to one of the predefined, ISO
     8601-compatible formats for representing the date (if _opt_ is
@@ -698,9 +698,9 @@ bool DateTime::operator==(const DateTime &right) const
     @return Timestamp string, e.g. "2020-04-16T18:34:56".
 */
 /**************************************************************************/
-string DateTime::timestamp(timestampOpt opt)
+const char *DateTime::timestamp(timestampOpt opt)
 {
-    char buffer[25]; // large enough for any DateTime, including invalid ones
+    static char buffer[25] = {0}; // large enough for any DateTime, including invalid ones
 
     // Generate timestamp according to opt
     switch (opt)
@@ -718,7 +718,7 @@ string DateTime::timestamp(timestampOpt opt)
         sprintf(buffer, "%u-%02d-%02dT%02d:%02d:%02d", 2000U + yOff, m, d, hh, mm,
                 ss);
     }
-    return string(buffer);
+    return buffer;
 }
 
 /**************************************************************************/
@@ -823,10 +823,10 @@ bool RTC_DS3231::begin(I2C *I2C_instance)
 
 /**************************************************************************/
 /*!
-    @brief  Check the status register Oscillator Stop Flag (OSF) to see if the DS3231
+    @brief  Read the status register's Oscillator Stop Flag (OSF) to see if the DS3231
    stopped due to power loss.
     @return True if the bit is set (oscillator stopped) or false if it is
-   running
+   running.
     @note If set, OSF remains at logic 1 until written to logic 0.
 */
 /**************************************************************************/
@@ -843,7 +843,7 @@ bool RTC_DS3231::lostPower(void)
 /**************************************************************************/
 void RTC_DS3231::adjust(const DateTime &dt)
 {
-    constexpr size_t len = 7;
+    static constexpr size_t len = 7;
     uint8_t time_adjust[len] = {bin2bcd(dt.second()),
                                 bin2bcd(dt.minute()),
                                 bin2bcd(dt.hour()),
@@ -856,7 +856,7 @@ void RTC_DS3231::adjust(const DateTime &dt)
 
     uint8_t statreg = read_i2c_register(DS3231_ADDRESS, DS3231_STATUSREG, I2C_bus);
     statreg &= ~0x80; // Clear OSF bit.
-    write_i2c_register(DS3231_ADDRESS, DS3231_STATUSREG, statreg, I2C_bus); 
+    write_i2c_register(DS3231_ADDRESS, DS3231_STATUSREG, statreg, I2C_bus);
 }
 
 /**************************************************************************/
@@ -877,9 +877,116 @@ DateTime RTC_DS3231::now()
     // Ignore data[3]: Day of the week.
     uint8_t d = bcd2bin(data[4]);
     uint8_t m = bcd2bin(data[5]);
-    uint8_t y = bcd2bin(data[6]) + 2000U; // RTC stores year as value between [0, 99].
+    uint16_t y = bcd2bin(data[6]) + 2000U; // RTC stores year as value between [0, 99].
 
     return DateTime(y, m, d, hh, mm, ss);
+}
+
+/**************************************************************************/
+/*!
+    @brief  Activate ~INT output on alarm match.
+*/
+/**************************************************************************/
+void RTC_DS3231::activateIntOutput()
+{
+    uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, I2C_bus);
+    ctrl |= 0x04;
+    write_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, ctrl, I2C_bus);
+}
+
+/**************************************************************************/
+/*!
+    @brief  Set alarm 1 for DS3231 and enable alarm 1 interrupt.
+    @param 	dt DateTime object.
+    @param 	alarm_mode Desired mode, see Ds3231Alarm1Mode enum
+*/
+/**************************************************************************/
+void RTC_DS3231::setAlarm1(const DateTime &dt, Ds3231Alarm1Mode alarm_mode)
+{
+    uint8_t A1M1 = (alarm_mode & 0x01) << 7; // Seconds bit 7.
+    uint8_t A1M2 = (alarm_mode & 0x02) << 6; // Minutes bit 7.
+    uint8_t A1M3 = (alarm_mode & 0x04) << 5; // Hour bit 7.
+    uint8_t A1M4 = (alarm_mode & 0x08) << 4; // Day/Date bit 7.
+    uint8_t DY_DT = (alarm_mode & 0x10)
+                    << 2; // Day/Date bit 6. Date when 0, day of week when 1.
+
+    uint8_t write_buf[4] = {0}; 
+    write_buf[0] = bin2bcd(dt.second()) | A1M1;
+    write_buf[1] = bin2bcd(dt.minute()) | A1M2;
+    write_buf[2] = bin2bcd(dt.hour()) | A1M3;
+    write_buf[3] = DY_DT ? bin2bcd(dowToDS3231(dt.dayOfTheWeek())) | A1M4 | DY_DT
+                         : bin2bcd(dt.day()) | A1M4 | DY_DT;
+    I2C_bus->WriteBytes(DS3231_ADDRESS, DS3231_ALARM1, 4, write_buf);
+
+    uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, I2C_bus);
+    ctrl |= 0x01; // Enable alarm 1 interrupt (AI1E)
+    write_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, ctrl, I2C_bus);
+}
+
+/**************************************************************************/
+/*!
+    @brief  Set alarm 2 for DS3231 and enable alarm 2 interrupt.
+    @param 	dt DateTime object
+    @param 	alarm_mode Desired mode, see Ds3231Alarm2Mode enum
+*/
+/**************************************************************************/
+void RTC_DS3231::setAlarm2(const DateTime &dt, Ds3231Alarm2Mode alarm_mode)
+{
+    uint8_t A2M2 = (alarm_mode & 0x01) << 7; // Minutes bit 7.
+    uint8_t A2M3 = (alarm_mode & 0x02) << 6; // Hour bit 7.
+    uint8_t A2M4 = (alarm_mode & 0x04) << 5; // Day/Date bit 7.
+    uint8_t DY_DT = (alarm_mode & 0x8)
+                    << 3; // Day/Date bit 6. Date when 0, day of week when 1.
+
+    uint8_t write_buf[3] = {0};
+    write_buf[0] = bin2bcd(dt.minute()) | A2M2;
+    write_buf[1] = bin2bcd(dt.hour()) | A2M3;
+    write_buf[2] = DY_DT ? bin2bcd(dowToDS3231(dt.dayOfTheWeek())) | A2M4 | DY_DT
+                         : bin2bcd(dt.day()) | A2M4 | DY_DT;
+    I2C_bus->WriteBytes(DS3231_ADDRESS, DS3231_ALARM2, 3, write_buf);
+
+    uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, I2C_bus);
+    ctrl |= 0x02; // AI2E
+    write_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, ctrl, I2C_bus);
+}
+
+/**************************************************************************/
+/*!
+    @brief  Disable alarm from generating interrupt.
+    @param 	alarm_num Alarm number to disable (1 or 2)
+*/
+/**************************************************************************/
+void RTC_DS3231::disableAlarm(uint8_t alarm_num)
+{
+    uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, I2C_bus);
+    ctrl &= ~(0x01 << (alarm_num - 1));
+    write_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, ctrl, I2C_bus);
+}
+
+/**************************************************************************/
+/*!
+    @brief  Clear alarm's interrupt flag.
+    @param 	alarm_num Alarm number to clear (1 or 2)
+*/
+/**************************************************************************/
+void RTC_DS3231::clearAlarm(uint8_t alarm_num)
+{
+    uint8_t status = read_i2c_register(DS3231_ADDRESS, DS3231_STATUSREG, I2C_bus);
+    status &= ~(0x01 << (alarm_num - 1));
+    write_i2c_register(DS3231_ADDRESS, DS3231_STATUSREG, status, I2C_bus);
+}
+
+/**************************************************************************/
+/*!
+    @brief  Get status of alarm
+    @param 	alarm_num Alarm number to check status of (1 or 2)
+    @return True if alarm has been fired otherwise false
+*/
+/**************************************************************************/
+bool RTC_DS3231::alarmFired(uint8_t alarm_num)
+{
+    uint8_t status = read_i2c_register(DS3231_ADDRESS, DS3231_STATUSREG, I2C_bus);
+    return (status >> (alarm_num - 1)) & 0x1;
 }
 
 /**************************************************************************/

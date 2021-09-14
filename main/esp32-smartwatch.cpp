@@ -42,26 +42,32 @@ void app_main(void)
         ESP_LOGI(TAG, "Connected to DS3231M.");
     }
 
-    
     if(rtc.lostPower())
     {
-        ESP_LOGI(TAG, "RTC lost power, setting date and time to %s, %s.", __DATE__, __TIME__);
-        rtc.adjust(DateTime(__DATE__, __TIME__)); // Set RTC to time and date of compilation.
+        ESP_LOGI(TAG, "RTC lost power. "
+                      "Initializing date and time to %s, %s.", __DATE__, __TIME__);
+        DateTime compile_time(__DATE__, __TIME__);
+        rtc.adjust(compile_time); // Set RTC to time and date of compilation.
     }
- 
-    /*
+
+    // Set an alarm for 10 seconds after ESP32 reset.
+    DateTime now = rtc.now();
+    DateTime ten_secs_after(now + TimeSpan(0, 0, 0, 10));
+    ESP_LOGI(TAG, "Setting alarm 1 for %s", ten_secs_after.timestamp(DateTime::TIMESTAMP_TIME));
+    rtc.setAlarm1(ten_secs_after, DS3231_A1_Hour); 
+
     while(1)
     {
         // Get timestamp periodically. 
-        // Format: YYYY-MM-DDThh:mm:ss
         DateTime now = rtc.now();
-        printf("%u-%02d-%02dT%02d:%02d:%02d", 
-                now.year(), 
-                now.month(), 
-                now.day(), 
-                now.hour(), 
-                now.minute(),
-                now.second());
-        vTaskDelay(pdMS_TO_TICKS(2000));
-    } */
+        ESP_LOGI(TAG, "%s", now.timestamp());
+
+        // Check if alarm has been set
+        if(rtc.alarmFired(1))
+        {
+            ESP_LOGI(TAG, "Alarm triggered");
+            rtc.clearAlarm(1);
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    } 
 }
