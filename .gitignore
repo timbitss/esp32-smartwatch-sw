@@ -120,3 +120,7 @@ test2/
 # Workspace
 workspace.code-workspace
 .vscode/
+
+.idea/
+cmake-build-debug/
+main/cmake-build-debug/

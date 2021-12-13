@@ -16,6 +16,8 @@
   Adafruit invests time and resources providing this open source code,
   please support Adafruit and open-source hardware by purchasing
   products from Adafruit!
+
+  @note Modified library for use with ESP32.
 */
 /**************************************************************************/
 
@@ -272,7 +274,7 @@ class RTC_DS3231 {
 public:
   bool begin(I2C *I2C_instance);
   void adjust(const DateTime &dt);
-  bool lostPower(void);
+  bool lostPower();
   DateTime now();
   void activateIntOutput();
   void setAlarm1(const DateTime &dt, Ds3231Alarm1Mode alarm_mode);

@@ -40,6 +40,8 @@
   the public domain.
 
   This version: MIT (see LICENSE)
+
+  @note Modified library for use with ESP32.
 */
 /**************************************************************************/
 
@@ -830,7 +832,7 @@ bool RTC_DS3231::begin(I2C *I2C_instance)
     @note If set, OSF remains at logic 1 until written to logic 0.
 */
 /**************************************************************************/
-bool RTC_DS3231::lostPower(void)
+bool RTC_DS3231::lostPower()
 {
     return (read_i2c_register(DS3231_ADDRESS, DS3231_STATUSREG, I2C_bus) >> 7);
 }

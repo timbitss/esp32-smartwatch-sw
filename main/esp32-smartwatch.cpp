@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <cstdio>
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -15,6 +15,7 @@ const char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "
 
 void app_main(void)
 {
+    // Initialize I2C port.
     constexpr int sda_io_num = GPIO_NUM_21;
     constexpr int scl_io_num = GPIO_NUM_22;
     constexpr uint32_t i2c_clk_speed = 400000; // 400 kHz
@@ -31,6 +32,7 @@ void app_main(void)
 
     I2C i2c_bus(port_num, &i2c_conf);
 
+    // Initialize RTC.
     RTC_DS3231 rtc;
 
     if(!rtc.begin(&i2c_bus))
@@ -46,8 +48,7 @@ void app_main(void)
     {
         ESP_LOGI(TAG, "RTC lost power. "
                       "Initializing date and time to %s, %s.", __DATE__, __TIME__);
-        DateTime compile_time(__DATE__, __TIME__);
-        rtc.adjust(compile_time); // Set RTC to time and date of compilation.
+        rtc.adjust(DateTime(__DATE__, __TIME__)); // Set RTC to time and date of compilation.
     }
 
     // Set an alarm for 10 seconds after ESP32 reset.
