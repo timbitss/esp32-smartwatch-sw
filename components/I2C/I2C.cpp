@@ -7,7 +7,6 @@
 #include "I2C.h"
 #include "esp_log.h"
 #include "esp_err.h"
-#include "driver/i2c.h"
 
 // Unique component tag for logging information.
 static const char *TAG = "I2C";

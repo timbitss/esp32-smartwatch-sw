@@ -20,5 +20,5 @@ public:
     esp_err_t WriteBytes(uint8_t device_addr, uint8_t reg_addr, size_t len, const uint8_t *data) const;
 
 private:
-    i2c_port_t i2c_port;             // I2C Port Number.
+    i2c_port_t i2c_port; // I2C Port Number. Must be I2C_NUM_0 or I2C_NUM_1.
 };
