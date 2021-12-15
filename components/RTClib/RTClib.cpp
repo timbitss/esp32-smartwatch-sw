@@ -1008,3 +1008,15 @@ float RTC_DS3231::getTemperature()
 
     return (float)msb + (lsb >> 6) * 0.25f;
 }
+
+void RTC_DS3231::incrementMinute()
+{
+    const DateTime one_minute_ahead = now() + TimeSpan(60);
+    adjust(one_minute_ahead);
+}
+
+void RTC_DS3231::decrementMinute()
+{
+    const DateTime one_minute_prior = now() - TimeSpan(60);
+    adjust(one_minute_prior);
+}

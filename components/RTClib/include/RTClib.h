@@ -279,12 +279,12 @@ public:
   void activateIntOutput();
   void setAlarm1(const DateTime &dt, Ds3231Alarm1Mode alarm_mode);
   void setAlarm2(const DateTime &dt, Ds3231Alarm2Mode alarm_mode);
-  void incrementMinute();
-  void decrementMinute();
   void disableAlarm(uint8_t alarm_num);
   void clearAlarm(uint8_t alarm_num);
   bool alarmFired(uint8_t alarm_num);
   float getTemperature(); // in Celsius degrees
+  void incrementMinute();
+  void decrementMinute();
 
 protected:
   I2C *I2C_bus; ///< I2C bus connected to the RTC
