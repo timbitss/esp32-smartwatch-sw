@@ -3,14 +3,17 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
-#include "ButtonDebouncer.h"
 #include "esp32_smartwatch.h"
+#include "ButtonDebouncer.h"
+#include "I2C.h"
+#include "RTClib.h"
 
 extern "C" void app_main(void);
 
 
 // Private function prototypes
 static uint8_t io_read_buttons();
+void RunTask1Hz(void *parameters);
 void RunTask200Hz(void * parameters);
 
 // Unique component tag for logging data.
@@ -19,6 +22,43 @@ static const char *TAG = "APP_MAIN";
 
 void app_main(void)
 {
+    // Initialize I2C port.
+    constexpr int sda_io_num = GPIO_NUM_21;
+    constexpr int scl_io_num = GPIO_NUM_22;
+    constexpr uint32_t i2c_clk_speed = 400000; // 400 kHz
+
+    i2c_port_t port_num = I2C_NUM_0;
+    i2c_config_t i2c_conf;
+    i2c_conf.mode = I2C_MODE_MASTER;
+    i2c_conf.master.clk_speed = i2c_clk_speed;
+    i2c_conf.scl_io_num = scl_io_num;
+    i2c_conf.sda_io_num = sda_io_num;
+    i2c_conf.scl_pullup_en = false;
+    i2c_conf.sda_pullup_en = false;
+    i2c_conf.clk_flags = 0;
+
+    static I2C i2c_bus(port_num, &i2c_conf);
+
+    // Initialize RTC.
+    static RTC_DS3231 rtc{};
+
+    if(!rtc.begin(&i2c_bus))
+    {
+        ESP_LOGI(TAG, "Could not find DS3231M.");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Connected to DS3231M.");
+    }
+
+    if(rtc.lostPower())
+    {
+        ESP_LOGI(TAG, "RTC lost power. "
+                      "Initializing date and time to %s, %s.", __DATE__, __TIME__);
+        rtc.adjust(DateTime(__DATE__, __TIME__)); // Set RTC to time and date of compilation.
+    }
+
+    // Initialize button inputs
     gpio_config_t io_config;
     io_config.pin_bit_mask = (1 << GPIO_NUM_13);
     io_config.mode = GPIO_MODE_INPUT;
@@ -31,28 +71,54 @@ void app_main(void)
     io_config.pull_up_en = GPIO_PULLUP_ENABLE;
     gpio_config(&io_config);
 
+    xTaskCreatePinnedToCore(RunTask1Hz,
+                            "RunTask1Hz",
+                            TASK1HZ_STACK_SIZE,
+                            &rtc,
+                            2,
+                            0,
+                            APP_CPU_NUM);
+
+
     xTaskCreatePinnedToCore(RunTask200Hz,
     "RunTask200Hz",
     TASK200HZ_STACK_SIZE,
-    0,
+    &rtc,
     1,
     0,
     APP_CPU_NUM);
 
-    while(1)
+    for(;;)
     {
-        vTaskDelay(pdMS_TO_TICKS((1000)));
-        uint8_t button_status = io_read_buttons();
-        ESP_LOGI(TAG, "Button status: %x", button_status);
+        vTaskDelay(pdMS_TO_TICKS((100000)));
     }
 }
 
-void RunTask200Hz(void * parameters)
+void RunTask1Hz(void *parameters)
+{
+    TickType_t lastWakeTime;
+    const TickType_t period_ms = pdMS_TO_TICKS( 1000 );
+    RTC_DS3231* rtc = (RTC_DS3231*) parameters;
+
+    lastWakeTime = xTaskGetTickCount();
+
+    for(;;)
+    {
+        // Get and display time every second.
+        DateTime now = rtc->now();
+        ESP_LOGI(TAG, "1Hz: %s", now.timestamp());
+
+        vTaskDelayUntil(&lastWakeTime, period_ms);
+    }
+}
+
+void RunTask200Hz(void *parameters)
 {
     TickType_t lastWakeTime;
     const TickType_t period_ms = pdMS_TO_TICKS( 5 );
     uint8_t switch_bitmask = 0x3; // Using two switches
     ButtonDebouncer Buttons(io_read_buttons, switch_bitmask);
+    RTC_DS3231* rtc = (RTC_DS3231*) parameters;
     uint8_t states;
     uint8_t rising_edge_detected;
     uint8_t count0 = 0, count1 = 0;
@@ -64,14 +130,17 @@ void RunTask200Hz(void * parameters)
         Buttons.ProcessSwitches200Hz(&states, &rising_edge_detected);
         if (rising_edge_detected & 0x01)
         {
-            count0++;
+            rtc->incrementMinute();
+            DateTime now = rtc->now();
+            ESP_LOGI(TAG, "200Hz: %s", now.timestamp());
         }
         if (rising_edge_detected & 0x02)
         {
-            count1++;
+            rtc->decrementMinute();
+            DateTime now = rtc->now();
+            ESP_LOGI(TAG, "200Hz: %s", now.timestamp());
         }
 
-        ESP_LOGI(TAG, "Count0 = %u Count1 = %u, period_ms = %d", count0, count1, period_ms);
         vTaskDelayUntil(&lastWakeTime, period_ms);
     }
 }
