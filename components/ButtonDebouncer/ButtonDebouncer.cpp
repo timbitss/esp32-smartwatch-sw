@@ -11,9 +11,9 @@
 
 static const char* TAG = "ButtonDebouncer";
 
-ButtonDebouncer::ButtonDebouncer(uint8_t (*io_read_switches)()) : raw_state_history{}
+ButtonDebouncer::ButtonDebouncer(uint8_t (*io_read_switches)(), uint8_t _switch_bitmask) :
+read_switches{io_read_switches}, switch_bitmask{_switch_bitmask}, raw_state_history{}
 {
-    read_switches = io_read_switches;
     ESP_LOGI(TAG, "ButtonDebouncer object created");
 }
 
@@ -31,8 +31,8 @@ void ButtonDebouncer::ProcessSwitches200Hz(uint8_t *states, uint8_t *rising_edge
 
     raw_state_history[i] = read_switches();
 
-
-    uint8_t debounced_states = 0xff; // A 0 in bit position x means that the debounced switch x is open and vice-versa.
+    // A 0 in bit position x means that the debounced switch x is open and vice-versa.
+    uint8_t debounced_states = 0xff & switch_bitmask;
     for(uint8_t j = 0; j < NUM_OF_CHECKS; j++)
     {
         debounced_states &= raw_state_history[i];
