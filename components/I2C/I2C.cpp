@@ -33,7 +33,36 @@ I2C::I2C(i2c_port_t i2c_port_num, const i2c_config_t *i2c_conf)
     ESP_ERROR_CHECK(i2c_param_config(i2c_port_num, i2c_conf));
     ESP_ERROR_CHECK(i2c_driver_install(i2c_port_num, i2c_conf->mode, 0, 0, 0));
 
+    i2c_mutex = xSemaphoreCreateMutex();
+
     ESP_LOGI(TAG, "I2C Port %d initialized.", i2c_port_num);
+}
+
+bool I2C::TestThread(uint8_t device_addr) const
+{
+    xSemaphoreTake(i2c_mutex, portMAX_DELAY);
+    bool result = Test(device_addr);
+    xSemaphoreGive(i2c_mutex);
+
+    return result;
+}
+
+esp_err_t I2C::ReadBytesThread(uint8_t device_addr, uint8_t reg_addr, size_t len, uint8_t *data) const
+{
+    xSemaphoreTake(i2c_mutex, portMAX_DELAY);
+    esp_err_t err = ReadBytes(device_addr, reg_addr, len, data);
+    xSemaphoreGive(i2c_mutex);
+
+    return err;
+}
+
+esp_err_t I2C::WriteBytesThread(uint8_t device_addr, uint8_t reg_addr, size_t len, const uint8_t *data)
+{
+    xSemaphoreTake(i2c_mutex, portMAX_DELAY);
+    esp_err_t err = WriteBytes(device_addr, reg_addr, len, data);
+    xSemaphoreGive(i2c_mutex);
+
+    return err;
 }
 
 /**
@@ -103,7 +132,7 @@ esp_err_t I2C::ReadBytes(uint8_t device_addr, uint8_t reg_addr, size_t len, uint
     i2c_master_stop(i2c_cmd_handle); // Stop condition.
 
     // Execute I2C read (blocking) w/ timeout.
-    esp_err_t err = i2c_master_cmd_begin(i2c_port, i2c_cmd_handle, pdMS_TO_TICKS(1000));
+    esp_err_t err = i2c_master_cmd_begin(i2c_port, i2c_cmd_handle, pdMS_TO_TICKS(I2C_TIMEOUT));
 
     // Delete command queue.
     i2c_cmd_link_delete(i2c_cmd_handle);
@@ -141,7 +170,7 @@ esp_err_t I2C::WriteBytes(uint8_t device_addr, uint8_t reg_addr, size_t len, con
     i2c_master_stop(i2c_cmd_handle); // Stop transmission.
 
     // Execute I2C write (blocking) w/ timeout.
-    esp_err_t err = i2c_master_cmd_begin(i2c_port, i2c_cmd_handle, pdMS_TO_TICKS(1000));
+    esp_err_t err = i2c_master_cmd_begin(i2c_port, i2c_cmd_handle, pdMS_TO_TICKS(I2C_TIMEOUT));
 
     // Delete command queue.
     i2c_cmd_link_delete(i2c_cmd_handle);

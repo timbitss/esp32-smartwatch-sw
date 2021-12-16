@@ -72,7 +72,7 @@ static uint8_t read_i2c_register(uint8_t addr, uint8_t reg,
                                  I2C *I2C_instance)
 {
     uint8_t reg_value = 0;
-    I2C_instance->ReadBytes(addr, reg, 1, &reg_value);
+    I2C_instance->ReadBytesThread(addr, reg, 1, &reg_value);
     return reg_value;
 }
 
@@ -88,7 +88,7 @@ static uint8_t read_i2c_register(uint8_t addr, uint8_t reg,
 static void write_i2c_register(uint8_t addr, uint8_t reg, uint8_t val,
                                I2C *I2C_instance)
 {
-    I2C_instance->WriteBytes(addr, reg, 1, &val);
+    I2C_instance->WriteBytesThread(addr, reg, 1, &val);
 }
 
 /**************************************************************************/
@@ -818,7 +818,7 @@ static uint8_t dowToDS3231(uint8_t d) { return d == 0 ? 7 : d; }
 bool RTC_DS3231::begin(I2C *I2C_instance)
 {
     I2C_bus = I2C_instance;
-    if (I2C_bus->Test(DS3231_ADDRESS))
+    if (I2C_bus->TestThread(DS3231_ADDRESS))
         return true;
     return false;
 }
@@ -854,7 +854,7 @@ void RTC_DS3231::adjust(const DateTime &dt)
                                 bin2bcd(dt.day()),
                                 bin2bcd(dt.month()),
                                 bin2bcd(dt.year() - 2000U)}; // RTC stores year from [0, 99].
-    I2C_bus->WriteBytes(DS3231_ADDRESS, DS3231_TIME, len, time_adjust);
+    I2C_bus->WriteBytesThread(DS3231_ADDRESS, DS3231_TIME, len, time_adjust);
 
     uint8_t statreg = read_i2c_register(DS3231_ADDRESS, DS3231_STATUSREG, I2C_bus);
     statreg &= ~0x80; // Clear OSF bit.
@@ -871,7 +871,7 @@ DateTime RTC_DS3231::now()
 {
     constexpr size_t read_len = 7;
     uint8_t data[read_len] = {0};
-    I2C_bus->ReadBytes(DS3231_ADDRESS, DS3231_TIME, read_len, data);
+    I2C_bus->ReadBytesThread(DS3231_ADDRESS, DS3231_TIME, read_len, data);
 
     uint8_t ss = bcd2bin(data[0]);
     uint8_t mm = bcd2bin(data[1]);
@@ -918,7 +918,7 @@ void RTC_DS3231::setAlarm1(const DateTime &dt, Ds3231Alarm1Mode alarm_mode)
     write_buf[2] = bin2bcd(dt.hour()) | A1M3;
     write_buf[3] = DY_DT ? bin2bcd(dowToDS3231(dt.dayOfTheWeek())) | A1M4 | DY_DT
                          : bin2bcd(dt.day()) | A1M4 | DY_DT;
-    I2C_bus->WriteBytes(DS3231_ADDRESS, DS3231_ALARM1, 4, write_buf);
+    I2C_bus->WriteBytesThread(DS3231_ADDRESS, DS3231_ALARM1, 4, write_buf);
 
     uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, I2C_bus);
     ctrl |= 0x01; // Enable alarm 1 interrupt (AI1E)
@@ -945,7 +945,7 @@ void RTC_DS3231::setAlarm2(const DateTime &dt, Ds3231Alarm2Mode alarm_mode)
     write_buf[1] = bin2bcd(dt.hour()) | A2M3;
     write_buf[2] = DY_DT ? bin2bcd(dowToDS3231(dt.dayOfTheWeek())) | A2M4 | DY_DT
                          : bin2bcd(dt.day()) | A2M4 | DY_DT;
-    I2C_bus->WriteBytes(DS3231_ADDRESS, DS3231_ALARM2, 3, write_buf);
+    I2C_bus->WriteBytesThread(DS3231_ADDRESS, DS3231_ALARM2, 3, write_buf);
 
     uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, I2C_bus);
     ctrl |= 0x02; // AI2E
@@ -1002,7 +1002,7 @@ float RTC_DS3231::getTemperature()
     uint8_t lsb;
     int8_t msb;
     uint8_t read_buf[2] = {0};
-    I2C_bus->ReadBytes(DS3231_ADDRESS, DS3231_TEMPERATUREREG, 2, read_buf);
+    I2C_bus->ReadBytesThread(DS3231_ADDRESS, DS3231_TEMPERATUREREG, 2, read_buf);
     msb = (int8_t)read_buf[0];
     lsb = read_buf[1];
 
