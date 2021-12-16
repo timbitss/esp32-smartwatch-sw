@@ -14,10 +14,13 @@ static const char *TAG = "I2C";
 /**
  * @brief Construct a new I2C master object.
  * 
- * @param i2c_port_num I2C Port Number. Must be I2C_NUM_0 or I2C_NUM_1.
- * @param i2c_conf     I2C Configuration Parameters.
+ * @param i2c_port_num   I2C port number. Must be I2C_NUM_0 or I2C_NUM_1.
+ * @param sda_io_num     IO pin number mapped to SDA.
+ * @param scl_io_num     IO pin number mapped to SCL.
+ * @param i2c_clk_speed  I2C clock speed in Hz.
+ * @param enable_pullups Enable internal pullups for SDA and SCL lines.
  */
-I2C::I2C(i2c_port_t i2c_port_num, const i2c_config_t *i2c_conf)
+I2C::I2C(i2c_port_t i2c_port_num, int sda_io_num, int scl_io_num, uint32_t i2c_clk_speed, bool enable_pullups)
 {
     if (i2c_port_num != I2C_NUM_0 && i2c_port_num != I2C_NUM_1)
     {
@@ -29,15 +32,31 @@ I2C::I2C(i2c_port_t i2c_port_num, const i2c_config_t *i2c_conf)
         i2c_port = i2c_port_num;
     }
 
+    i2c_config_t i2c_conf;
+    i2c_conf.mode = I2C_MODE_MASTER;
+    i2c_conf.master.clk_speed = i2c_clk_speed;
+    i2c_conf.scl_io_num = scl_io_num;
+    i2c_conf.sda_io_num = sda_io_num;
+    i2c_conf.scl_pullup_en = enable_pullups;
+    i2c_conf.sda_pullup_en = enable_pullups;
+    i2c_conf.clk_flags = 0;
+
     // Initialize I2C Port as a master.
-    ESP_ERROR_CHECK(i2c_param_config(i2c_port_num, i2c_conf));
-    ESP_ERROR_CHECK(i2c_driver_install(i2c_port_num, i2c_conf->mode, 0, 0, 0));
+    ESP_ERROR_CHECK(i2c_param_config(i2c_port_num, &i2c_conf));
+    ESP_ERROR_CHECK(i2c_driver_install(i2c_port_num, i2c_conf.mode, 0, 0, 0));
 
     i2c_mutex = xSemaphoreCreateMutex();
 
     ESP_LOGI(TAG, "I2C Port %d initialized.", i2c_port_num);
 }
 
+/**
+ * @brief Test if a device is connected to the I2C bus with added thread-safety.
+ *
+ * @param device_addr Device address without R/W bit.
+ * @return true: Device is connected to the I2C bus.
+ *        false: Device was not found on the I2C bus.
+ */
 bool I2C::TestThread(uint8_t device_addr) const
 {
     xSemaphoreTake(i2c_mutex, portMAX_DELAY);
@@ -47,6 +66,16 @@ bool I2C::TestThread(uint8_t device_addr) const
     return result;
 }
 
+/**
+ * @brief Read variable number of bytes from an I2C device with added thread-safety.
+ *
+ * @param[in]  device_addr Device address (not including R/~W bit).
+ * @param[in]  reg_addr    Starting register address.
+ * @param[in]  len         Number of bytes to read.
+ * @param[out] data        Buffer to store read data.
+ * @return ESP_OK:  Bytes were read successfully.
+ *         ESP_ERR: Bytes were not read successfully.
+ */
 esp_err_t I2C::ReadBytesThread(uint8_t device_addr, uint8_t reg_addr, size_t len, uint8_t *data) const
 {
     xSemaphoreTake(i2c_mutex, portMAX_DELAY);
@@ -56,6 +85,16 @@ esp_err_t I2C::ReadBytesThread(uint8_t device_addr, uint8_t reg_addr, size_t len
     return err;
 }
 
+/**
+ * @brief Write a variable number of bytes to an I2C device.
+ *
+ * @param device_addr Device address (not including R/~W bit).
+ * @param reg_addr    Starting register address.
+ * @param len         Number of bytes to write.
+ * @param data        Pointer to bytes to be written.
+ * @return ESP_OK:    Bytes were successfully written to register.
+ *         ESP_ERR_:   Bytes were not successfully written to register.
+ */
 esp_err_t I2C::WriteBytesThread(uint8_t device_addr, uint8_t reg_addr, size_t len, const uint8_t *data)
 {
     xSemaphoreTake(i2c_mutex, portMAX_DELAY);

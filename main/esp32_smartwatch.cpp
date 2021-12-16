@@ -10,7 +10,6 @@
 
 extern "C" void app_main(void);
 
-
 // Private function prototypes
 static uint8_t io_read_buttons();
 void RunTask1Hz(void *parameters);
@@ -22,22 +21,7 @@ static const char *TAG = "APP_MAIN";
 
 void app_main(void)
 {
-    // Initialize I2C port.
-    constexpr int sda_io_num = GPIO_NUM_21;
-    constexpr int scl_io_num = GPIO_NUM_22;
-    constexpr uint32_t i2c_clk_speed = 400000; // 400 kHz
-
-    i2c_port_t port_num = I2C_NUM_0;
-    i2c_config_t i2c_conf;
-    i2c_conf.mode = I2C_MODE_MASTER;
-    i2c_conf.master.clk_speed = i2c_clk_speed;
-    i2c_conf.scl_io_num = scl_io_num;
-    i2c_conf.sda_io_num = sda_io_num;
-    i2c_conf.scl_pullup_en = false;
-    i2c_conf.sda_pullup_en = false;
-    i2c_conf.clk_flags = 0;
-
-    static I2C i2c_bus(port_num, &i2c_conf);
+    static I2C i2c_bus(I2C_NUM_0, GPIO_NUM_21, GPIO_NUM_22, 400000, false);
 
     // Initialize RTC.
     static RTC_DS3231 rtc{};
@@ -120,21 +104,21 @@ void RunTask200Hz(void *parameters)
     ButtonDebouncer Buttons(io_read_buttons, switch_bitmask);
     RTC_DS3231* rtc = (RTC_DS3231*) parameters;
     uint8_t states;
-    uint8_t rising_edge_detected;
+    uint8_t press_detected;
     uint8_t count0 = 0, count1 = 0;
 
     lastWakeTime = xTaskGetTickCount();
 
     for (;;)
     {
-        Buttons.ProcessSwitches200Hz(&states, &rising_edge_detected);
-        if (rising_edge_detected & 0x01)
+        Buttons.ProcessSwitches200Hz(&states, &press_detected);
+        if (press_detected & 0x01)
         {
             rtc->incrementMinute();
             DateTime now = rtc->now();
             ESP_LOGI(TAG, "200Hz: %s", now.timestamp());
         }
-        if (rising_edge_detected & 0x02)
+        if (press_detected & 0x02)
         {
             rtc->decrementMinute();
             DateTime now = rtc->now();

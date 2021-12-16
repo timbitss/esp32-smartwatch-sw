@@ -17,7 +17,7 @@
 class I2C
 {
 public:
-    I2C(i2c_port_t i2c_port_num, const i2c_config_t *i2c_conf);
+    I2C(i2c_port_t i2c_port_num, int sda_io_num, int scl_io_num, uint32_t i2c_clk_speed, bool enable_pullups);
 
     bool TestThread(uint8_t device_addr) const;
     esp_err_t ReadBytesThread(uint8_t device_addr, uint8_t reg_addr, size_t len, uint8_t *data) const;
