@@ -1,4 +1,6 @@
-//
-// Created by Timothy on 2021-12-17.
-//
+/**
+ * @file StateMachine.cpp
+ * @author Timothy Nguyen
+ * @brief Simple state machine implementation.
+ */
 

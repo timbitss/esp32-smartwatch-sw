@@ -1,4 +1,4 @@
-idf_component_register(SRCS "RTClib.cpp"
+idf_component_register(SRCS "StateMachine.cpp"
                        INCLUDE_DIRS "include"
-                       REQUIRES I2C
-                       PRIV_REQUIRES I2C)
+                       REQUIRES
+                       PRIV_REQUIRES)

@@ -18,7 +18,7 @@ public:
     ButtonDebouncer(uint8_t (*io_read_switches)(), uint8_t _switch_bitmask);
 
     // Call debouncer every 5 ms from an interrupt or periodic task.
-    void ProcessSwitches200Hz(uint8_t *debounced_states, uint8_t *press_detected);
+    void ProcessSwitches200Hz(uint8_t *debounced_states, uint8_t *press_detected, uint8_t *press_released);
 
 private:
     uint8_t (*read_switches)();

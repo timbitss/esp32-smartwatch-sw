@@ -18,6 +18,14 @@ void RunTask200Hz(void * parameters);
 // Unique component tag for logging data.
 static const char *TAG = "APP_MAIN";
 
+// State machine.
+enum StateMachine
+{
+    NORMAL = 0,
+    ALARM_ADJUST,
+    NUM_OF_STATES
+} present_state;
+
 
 void app_main(void)
 {
@@ -80,17 +88,20 @@ void app_main(void)
 
 void RunTask1Hz(void *parameters)
 {
+    RTC_DS3231* rtc = (RTC_DS3231*) parameters;
+
     TickType_t lastWakeTime;
     const TickType_t period_ms = pdMS_TO_TICKS( 1000 );
-    RTC_DS3231* rtc = (RTC_DS3231*) parameters;
 
     lastWakeTime = xTaskGetTickCount();
 
     for(;;)
     {
-        // Get and display time every second.
-        DateTime now = rtc->now();
-        ESP_LOGI(TAG, "1Hz: %s", now.timestamp());
+        if(present_state == NORMAL)
+        {
+            DateTime now = rtc->now();
+            ESP_LOGI(TAG, "1Hz: %s", now.timestamp());
+        }
 
         vTaskDelayUntil(&lastWakeTime, period_ms);
     }
@@ -98,31 +109,78 @@ void RunTask1Hz(void *parameters)
 
 void RunTask200Hz(void *parameters)
 {
+    RTC_DS3231* rtc = (RTC_DS3231*) parameters;
+
     TickType_t lastWakeTime;
     const TickType_t period_ms = pdMS_TO_TICKS( 5 );
+
     uint8_t switch_bitmask = 0x3; // Using two switches
     ButtonDebouncer Buttons(io_read_buttons, switch_bitmask);
-    RTC_DS3231* rtc = (RTC_DS3231*) parameters;
-    uint8_t states;
-    uint8_t press_detected;
-    uint8_t count0 = 0, count1 = 0;
+    uint8_t button_states = 0, prev_button_states = 0;
+    uint8_t press_detected = 0, press_released = 0;
+    uint32_t timeheld0_ms = 0, timeheld1_ms = 0;
 
     lastWakeTime = xTaskGetTickCount();
 
     for (;;)
     {
-        Buttons.ProcessSwitches200Hz(&states, &press_detected);
-        if (press_detected & 0x01)
+        Buttons.ProcessSwitches200Hz(&button_states, &press_detected, &press_released);
+
+        if (button_states & 0x01)
         {
-            rtc->incrementMinute();
-            DateTime now = rtc->now();
-            ESP_LOGI(TAG, "200Hz: %s", now.timestamp());
+            timeheld0_ms += 5;
+            if (timeheld0_ms == LONG_PRESS_DURATION_MS)
+            {
+                present_state = present_state == NORMAL ? ALARM_ADJUST : NORMAL; // Change state
+                ESP_LOGI(TAG, "Button 0 long press");
+            }
         }
-        if (press_detected & 0x02)
+        if (button_states & 0x02)
         {
-            rtc->decrementMinute();
-            DateTime now = rtc->now();
-            ESP_LOGI(TAG, "200Hz: %s", now.timestamp());
+            timeheld1_ms += 5;
+            if (timeheld1_ms == LONG_PRESS_DURATION_MS)
+            {
+                present_state = present_state == NORMAL ? ALARM_ADJUST : NORMAL;
+                ESP_LOGI(TAG, "Button 1 long press");
+            }
+        }
+        if (press_released & 0x01)
+        {
+            if (timeheld0_ms < LONG_PRESS_DURATION_MS)
+            {
+                if(present_state == NORMAL)
+                {
+                    rtc->incrementMinute();
+                    DateTime now = rtc->now();
+                    ESP_LOGI(TAG, "200Hz: %s", now.timestamp());
+                }
+                else
+                {
+                    ESP_LOGI(TAG, "Adjust alarm up");
+                }
+            }
+
+            ESP_LOGI(TAG, "Button 0 released");
+            timeheld0_ms = 0;
+        }
+        if (press_released & 0x02)
+        {
+            if (timeheld1_ms < LONG_PRESS_DURATION_MS)
+            {
+                if(present_state == NORMAL)
+                {
+                    rtc->decrementMinute();
+                    DateTime now = rtc->now();
+                    ESP_LOGI(TAG, "200Hz: %s", now.timestamp());
+                }
+                else
+                {
+                    ESP_LOGI(TAG, "Adjust alarm down");
+                }
+            }
+
+            ESP_LOGI(TAG, "Button 1 released");
+            timeheld1_ms = 0;
         }
 
         vTaskDelayUntil(&lastWakeTime, period_ms);

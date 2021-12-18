@@ -1,8 +1,17 @@
-//
-// Created by Timothy on 2021-12-17.
-//
+/**
+ * @file StateMachine.h
+ * @author Timothy Nguyen
+ * @brief Simple state machine implementation.
+ */
 
-#ifndef ESP32_SMARTWATCH_STATEMACHINE_H
-#define ESP32_SMARTWATCH_STATEMACHINE_H
+enum State
+{
 
-#endif //ESP32_SMARTWATCH_STATEMACHINE_H
+};
+
+class StateMachine
+{
+
+
+};
+

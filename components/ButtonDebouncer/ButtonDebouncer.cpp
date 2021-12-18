@@ -27,12 +27,13 @@ read_switches{io_read_switches}, switch_bitmask{_switch_bitmask}, raw_state_hist
 /**
  * @brief Debounce up to 8 switches by reading their raw status every 5 ms.
  *
- * Switch state transitions from open (0) to closed (1) when switch status is stable for NUM_OF_CHECKS * 5 ms.
+ * Switch state transitions from open (0) to closed (1) only when switch status is stable for NUM_OF_CHECKS * 5 ms.
  *
  * @param[in,out] states          Debounced status of switches defined by bit position: 1 = closed, 0 = open.
- * @param[in]     press_detected  Indication of whether press occurred: 1 = true, 0 = false.
+ * @param[out]    press_detected  Indication of whether button press occurred: 1 = true, 0 = false.
+ * @param[out]    press_released  Indication of whether button was released: 1 = true, 0 = false.
  */
-void ButtonDebouncer::ProcessSwitches200Hz(uint8_t *states, uint8_t *press_detected)
+void ButtonDebouncer::ProcessSwitches200Hz(uint8_t *states, uint8_t *press_detected, uint8_t *press_released)
 {
     static uint8_t i = 0;
 
@@ -46,6 +47,7 @@ void ButtonDebouncer::ProcessSwitches200Hz(uint8_t *states, uint8_t *press_detec
     }
 
     *press_detected = debounced_states & ~(*states);
+    *press_released = ~debounced_states & *states;
 
     *states = debounced_states;
 
