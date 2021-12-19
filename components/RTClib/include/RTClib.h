@@ -42,6 +42,9 @@ class TimeSpan;
   0x11 ///< Temperature register (high byte - low byte is at 0x12), 10-bit
        ///< temperature value
 
+#define ALARM1 0x01
+#define ALARM2 0x02
+
 /** Constants */
 #define SECONDS_PER_DAY 86400L ///< 60 * 60 * 24
 #define SECONDS_FROM_1970_TO_2000                                              \
@@ -130,7 +133,8 @@ public:
     TIMESTAMP_TIME, //!< `hh:mm:ss`
     TIMESTAMP_DATE  //!< `YYYY-MM-DD`
   };
-  const char* timestamp(timestampOpt opt = TIMESTAMP_FULL);
+  const char* timestamp(timestampOpt opt = TIMESTAMP_FULL) const;
+  void timestamp(char* buffer, timestampOpt opt = TIMESTAMP_FULL) const;
 
   DateTime operator+(const TimeSpan &span);
   DateTime operator-(const TimeSpan &span);
@@ -285,7 +289,9 @@ public:
   float getTemperature(); // in Celsius degrees
   void incrementMinute();
   void decrementMinute();
-
+  DateTime getAlarm1();
+  void incrementAlarm1Minute();
+  void decrementAlarm1Minute();
 protected:
   I2C *I2C_bus; ///< I2C bus connected to the RTC
 };

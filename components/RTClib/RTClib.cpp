@@ -700,7 +700,7 @@ bool DateTime::operator==(const DateTime &right) const
     @return Timestamp string, e.g. "2020-04-16T18:34:56".
 */
 /**************************************************************************/
-const char *DateTime::timestamp(timestampOpt opt)
+const char *DateTime::timestamp(timestampOpt opt) const
 {
     static char buffer[25] = {0}; // large enough for any DateTime, including invalid ones
 
@@ -721,6 +721,27 @@ const char *DateTime::timestamp(timestampOpt opt)
                 ss);
     }
     return buffer;
+}
+
+void DateTime::timestamp(char* buffer, timestampOpt opt) const
+{
+    // Generate timestamp according to opt
+    assert(buffer != nullptr);
+    switch (opt)
+    {
+        case TIMESTAMP_TIME:
+            // Only time
+            sprintf(buffer, "%02d:%02d:%02d", hh, mm, ss);
+            break;
+        case TIMESTAMP_DATE:
+            // Only date
+            sprintf(buffer, "%u-%02d-%02d", 2000U + yOff, m, d);
+            break;
+        default:
+            // Full
+            sprintf(buffer, "%u-%02d-%02dT%02d:%02d:%02d", 2000U + yOff, m, d, hh, mm,
+                    ss);
+    }
 }
 
 /**************************************************************************/
@@ -1019,4 +1040,36 @@ void RTC_DS3231::decrementMinute()
 {
     const DateTime one_minute_prior = now() - TimeSpan(60);
     adjust(one_minute_prior);
+}
+
+/**
+ * @brief Get current alarm 1 time.
+ *
+ * @return Current alarm 1 time as DateTime object.
+ * @note Only hours, minutes, and seconds are considered.
+ */
+DateTime RTC_DS3231::getAlarm1()
+{
+    const size_t bytes_to_read = 3;
+    uint8_t data[bytes_to_read] = {0};
+    I2C_bus->ReadBytesThread(DS3231_ADDRESS, DS3231_ALARM1, bytes_to_read, data);
+
+    uint8_t sec = bcd2bin(data[0] & 0x7f);  // Ignore A1M1 bit.
+    uint8_t min = bcd2bin(data[1] & 0x7f);  // Ignore A1M2 bit.
+    uint8_t hour = bcd2bin(data[2] & 0x7f); // Ignore A1M3 bit.
+
+    // Year, month, and day arbitrarily chosen for + and - operations.
+    return DateTime(2021, 12, 18, hour, min, sec);
+}
+
+void RTC_DS3231::incrementAlarm1Minute()
+{
+    const DateTime one_minute_ahead = getAlarm1() + TimeSpan(60);
+    setAlarm1(one_minute_ahead, DS3231_A1_Hour); // Alarm triggered when hours, minutes, and seconds match.
+}
+
+void RTC_DS3231::decrementAlarm1Minute()
+{
+    const DateTime one_minute_prior = getAlarm1() - TimeSpan(60);
+    setAlarm1(one_minute_prior, DS3231_A1_Hour); // Alarm triggered when hours, minutes, and seconds match.
 }

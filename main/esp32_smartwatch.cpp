@@ -10,22 +10,29 @@
 
 extern "C" void app_main(void);
 
+enum State : uint8_t;
+
 // Private function prototypes
 static uint8_t io_read_buttons();
 void RunTask1Hz(void *parameters);
 void RunTask200Hz(void * parameters);
+static void change_state(State next_state);
 
 // Unique component tag for logging data.
 static const char *TAG = "APP_MAIN";
 
+SemaphoreHandle_t statemachine_mutex;
+
 // State machine.
-enum StateMachine
+enum State : uint8_t
 {
     NORMAL = 0,
     ALARM_ADJUST,
+    ALARM_FIRED,
     NUM_OF_STATES
 } present_state;
 
+const char* state_names[NUM_OF_STATES] = {"NORMAL", "ALARM_ADJUST", "ALARM_FIRED"};
 
 void app_main(void)
 {
@@ -49,6 +56,9 @@ void app_main(void)
                       "Initializing date and time to %s, %s.", __DATE__, __TIME__);
         rtc.adjust(DateTime(__DATE__, __TIME__)); // Set RTC to time and date of compilation.
     }
+
+    // Set initial alarm time to arbitrary value.
+    rtc.setAlarm1(rtc.now() - TimeSpan(60), DS3231_A1_Hour);
 
     // Initialize button inputs
     gpio_config_t io_config;
@@ -80,6 +90,8 @@ void app_main(void)
     0,
     APP_CPU_NUM);
 
+    statemachine_mutex = xSemaphoreCreateMutex();
+
     for(;;)
     {
         vTaskDelay(pdMS_TO_TICKS((100000)));
@@ -89,19 +101,22 @@ void app_main(void)
 void RunTask1Hz(void *parameters)
 {
     RTC_DS3231* rtc = (RTC_DS3231*) parameters;
-
     TickType_t lastWakeTime;
     const TickType_t period_ms = pdMS_TO_TICKS( 1000 );
+    static char current_time[25], alarm_time[25];
 
     lastWakeTime = xTaskGetTickCount();
 
     for(;;)
     {
-        if(present_state == NORMAL)
-        {
-            DateTime now = rtc->now();
-            ESP_LOGI(TAG, "1Hz: %s", now.timestamp());
-        }
+        if(rtc->alarmFired(ALARM1)) present_state = ALARM_FIRED;
+
+        rtc->now().timestamp(current_time);
+        rtc->getAlarm1().timestamp(alarm_time, DateTime::TIMESTAMP_TIME);
+        ESP_LOGI(TAG, "(1Hz) Time: %s Alarm 1: %s State: %s",
+                 current_time,
+                 alarm_time,
+                 state_names[present_state]);
 
         vTaskDelayUntil(&lastWakeTime, period_ms);
     }
@@ -131,7 +146,7 @@ void RunTask200Hz(void *parameters)
             timeheld0_ms += 5;
             if (timeheld0_ms == LONG_PRESS_DURATION_MS)
             {
-                present_state = present_state == NORMAL ? ALARM_ADJUST : NORMAL; // Change state
+                change_state(present_state == NORMAL ? ALARM_ADJUST : NORMAL);
                 ESP_LOGI(TAG, "Button 0 long press");
             }
         }
@@ -140,7 +155,7 @@ void RunTask200Hz(void *parameters)
             timeheld1_ms += 5;
             if (timeheld1_ms == LONG_PRESS_DURATION_MS)
             {
-                present_state = present_state == NORMAL ? ALARM_ADJUST : NORMAL;
+                change_state(present_state == NORMAL ? ALARM_ADJUST : NORMAL);
                 ESP_LOGI(TAG, "Button 1 long press");
             }
         }
@@ -154,9 +169,17 @@ void RunTask200Hz(void *parameters)
                     DateTime now = rtc->now();
                     ESP_LOGI(TAG, "200Hz: %s", now.timestamp());
                 }
+                else if (present_state == ALARM_ADJUST)
+                {
+                    rtc->incrementAlarm1Minute();
+                    DateTime alarm1 = rtc->getAlarm1();
+                    ESP_LOGI(TAG, "200Hz: Alarm 1 = %s", alarm1.timestamp(DateTime::TIMESTAMP_TIME));
+                }
                 else
                 {
-                    ESP_LOGI(TAG, "Adjust alarm up");
+                    rtc->clearAlarm(ALARM1);
+                    ESP_LOGI(TAG, "Alarm 1 cleared");
+                    change_state(NORMAL);
                 }
             }
 
@@ -167,15 +190,23 @@ void RunTask200Hz(void *parameters)
         {
             if (timeheld1_ms < LONG_PRESS_DURATION_MS)
             {
-                if(present_state == NORMAL)
+                if (present_state == NORMAL)
                 {
                     rtc->decrementMinute();
                     DateTime now = rtc->now();
                     ESP_LOGI(TAG, "200Hz: %s", now.timestamp());
                 }
+                else if (present_state == ALARM_ADJUST)
+                {
+                    rtc->decrementAlarm1Minute();
+                    DateTime alarm1 = rtc->getAlarm1();
+                    ESP_LOGI(TAG, "200Hz: Alarm 1 = %s", alarm1.timestamp(DateTime::TIMESTAMP_TIME));
+                }
                 else
                 {
-                    ESP_LOGI(TAG, "Adjust alarm down");
+                    rtc->clearAlarm(ALARM1);
+                    ESP_LOGI(TAG, "Alarm 1 cleared");
+                    change_state(NORMAL);
                 }
             }
 
@@ -193,4 +224,11 @@ static uint8_t io_read_buttons()
     uint8_t button_1_status = (uint8_t)gpio_get_level(GPIO_NUM_13) ^ 0x01; // 0 = open, 1 = closed (active-low)
     uint8_t button_2_status = (uint8_t)gpio_get_level(GPIO_NUM_0) ^ 0x01;
     return button_2_status << 1U | button_1_status ;
+}
+
+static void change_state(State next_state)
+{
+    xSemaphoreTake(statemachine_mutex, portMAX_DELAY);
+    present_state = next_state;
+    xSemaphoreGive(statemachine_mutex);
 }
