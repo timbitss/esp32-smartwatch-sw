@@ -1,7 +1,7 @@
 /**
  * @file Buzzer.cpp
  * @author Timothy Nguyen
- * @brief Transducer Driver
+ * @brief Transducer Driver using ESP32's PWM/LEDC peripheral.
  *
  * Datasheet: https://www.puiaudio.com/media/SpecSheet/SMT-0340-T-R.pdf
  */

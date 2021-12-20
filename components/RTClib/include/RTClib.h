@@ -17,7 +17,7 @@
   please support Adafruit and open-source hardware by purchasing
   products from Adafruit!
 
-  @note Modified library for use with ESP32.
+  @note Modified library for use with ESP32 smartwatch.
 */
 /**************************************************************************/
 

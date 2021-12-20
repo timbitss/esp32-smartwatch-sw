@@ -41,7 +41,7 @@
 
   This version: MIT (see LICENSE)
 
-  @note Modified library for use with ESP32.
+  @note Updated library for use with ESP32 smartwatch.
 */
 /**************************************************************************/
 
@@ -1030,12 +1030,18 @@ float RTC_DS3231::getTemperature()
     return (float)msb + (lsb >> 6) * 0.25f;
 }
 
+/**
+ * @brief Increment current RTC time by one minute.
+ */
 void RTC_DS3231::incrementMinute()
 {
     const DateTime one_minute_ahead = now() + TimeSpan(60);
     adjust(one_minute_ahead);
 }
 
+/**
+ * @brief Decrement current RTC time by one minute.
+ */
 void RTC_DS3231::decrementMinute()
 {
     const DateTime one_minute_prior = now() - TimeSpan(60);
@@ -1045,8 +1051,7 @@ void RTC_DS3231::decrementMinute()
 /**
  * @brief Get current alarm 1 time.
  *
- * @return Current alarm 1 time as DateTime object.
- * @note Only hours, minutes, and seconds are considered.
+ * @return Current alarm 1 time (hours, minutes, and seconds) as DateTime object.
  */
 DateTime RTC_DS3231::getAlarm1()
 {
@@ -1058,16 +1063,22 @@ DateTime RTC_DS3231::getAlarm1()
     uint8_t min = bcd2bin(data[1] & 0x7f);  // Ignore A1M2 bit.
     uint8_t hour = bcd2bin(data[2] & 0x7f); // Ignore A1M3 bit.
 
-    // Year, month, and day arbitrarily chosen for + and - operations.
+    // Year, month, and day arbitrarily chosen but required for + and - operations.
     return DateTime(2021, 12, 18, hour, min, sec);
 }
 
+/**
+ * @brief Increment alarm 1 time by one minute.
+ */
 void RTC_DS3231::incrementAlarm1Minute()
 {
     const DateTime one_minute_ahead = getAlarm1() + TimeSpan(60);
     setAlarm1(one_minute_ahead, DS3231_A1_Hour); // Alarm triggered when hours, minutes, and seconds match.
 }
 
+/**
+ * @brief Decrement alarm 1 time by one minute.
+ */
 void RTC_DS3231::decrementAlarm1Minute()
 {
     const DateTime one_minute_prior = getAlarm1() - TimeSpan(60);
