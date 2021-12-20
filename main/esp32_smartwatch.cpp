@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "esp32_smartwatch.h"
+#include "Buzzer.h"
 #include "ButtonDebouncer.h"
 #include "I2C.h"
 #include "RTClib.h"
@@ -32,7 +33,16 @@ enum State : uint8_t
     NUM_OF_STATES
 } present_state;
 
+static bool alarm_enabled;
+
+static uint8_t buzzer_flag;
+
 const char* state_names[NUM_OF_STATES] = {"NORMAL", "ALARM_ADJUST", "ALARM_FIRED"};
+
+struct Peripheral
+{
+    Buzzer* buzzer;
+} peripheral;
 
 void app_main(void)
 {
@@ -57,7 +67,7 @@ void app_main(void)
         rtc.adjust(DateTime(__DATE__, __TIME__)); // Set RTC to time and date of compilation.
     }
 
-    // Set initial alarm time to arbitrary value.
+    // Set alarm time to arbitrary value initially.
     rtc.setAlarm1(rtc.now() - TimeSpan(60), DS3231_A1_Hour);
 
     // Initialize button inputs
@@ -72,6 +82,13 @@ void app_main(void)
     io_config.pin_bit_mask = (1 << GPIO_NUM_0);
     io_config.pull_up_en = GPIO_PULLUP_ENABLE;
     gpio_config(&io_config);
+
+    // Create buzzer object.
+    static Buzzer buzzer(LEDC_TIMER_0, 4000, GPIO_NUM_33, LEDC_CHANNEL_0);
+    peripheral.buzzer = &buzzer;
+
+    // Initialize state machine mutex.
+    statemachine_mutex = xSemaphoreCreateMutex();
 
     xTaskCreatePinnedToCore(RunTask1Hz,
                             "RunTask1Hz",
@@ -90,8 +107,6 @@ void app_main(void)
     0,
     APP_CPU_NUM);
 
-    statemachine_mutex = xSemaphoreCreateMutex();
-
     for(;;)
     {
         vTaskDelay(pdMS_TO_TICKS((100000)));
@@ -109,14 +124,28 @@ void RunTask1Hz(void *parameters)
 
     for(;;)
     {
-        if(rtc->alarmFired(ALARM1)) present_state = ALARM_FIRED;
+        if(rtc->alarmFired(ALARM1))
+        {
+            if(alarm_enabled)
+            {
+                if(buzzer_flag & 0x01) peripheral.buzzer->TurnOnBuzzer();
+                else                   peripheral.buzzer->TurnOffBuzzer();
+                buzzer_flag ^= 0x01;
+                present_state = ALARM_FIRED;
+            }
+            else
+            {
+                rtc->clearAlarm(ALARM1);
+            }
+        }
 
         rtc->now().timestamp(current_time);
         rtc->getAlarm1().timestamp(alarm_time, DateTime::TIMESTAMP_TIME);
-        ESP_LOGI(TAG, "(1Hz) Time: %s Alarm 1: %s State: %s",
+        ESP_LOGI(TAG, "(1Hz) Time: %s Alarm: %s State: %s Alarm %s",
                  current_time,
                  alarm_time,
-                 state_names[present_state]);
+                 state_names[present_state],
+                 alarm_enabled ? "enabled" : "disabled");
 
         vTaskDelayUntil(&lastWakeTime, period_ms);
     }
@@ -131,7 +160,7 @@ void RunTask200Hz(void *parameters)
 
     uint8_t switch_bitmask = 0x3; // Using two switches
     ButtonDebouncer Buttons(io_read_buttons, switch_bitmask);
-    uint8_t button_states = 0, prev_button_states = 0;
+    uint8_t button_states = 0;
     uint8_t press_detected = 0, press_released = 0;
     uint32_t timeheld0_ms = 0, timeheld1_ms = 0;
 
@@ -155,7 +184,7 @@ void RunTask200Hz(void *parameters)
             timeheld1_ms += 5;
             if (timeheld1_ms == LONG_PRESS_DURATION_MS)
             {
-                change_state(present_state == NORMAL ? ALARM_ADJUST : NORMAL);
+                alarm_enabled = alarm_enabled ? false : true;
                 ESP_LOGI(TAG, "Button 1 long press");
             }
         }
@@ -178,6 +207,7 @@ void RunTask200Hz(void *parameters)
                 else
                 {
                     rtc->clearAlarm(ALARM1);
+                    peripheral.buzzer->TurnOffBuzzer();
                     ESP_LOGI(TAG, "Alarm 1 cleared");
                     change_state(NORMAL);
                 }
@@ -205,6 +235,7 @@ void RunTask200Hz(void *parameters)
                 else
                 {
                     rtc->clearAlarm(ALARM1);
+                    peripheral.buzzer->TurnOffBuzzer();
                     ESP_LOGI(TAG, "Alarm 1 cleared");
                     change_state(NORMAL);
                 }

@@ -1,0 +1,50 @@
+/**
+ * @file Buzzer.cpp
+ * @author Timothy Nguyen
+ * @brief Transducer Driver
+ *
+ * Datasheet: https://www.puiaudio.com/media/SpecSheet/SMT-0340-T-R.pdf
+ */
+
+#include "Buzzer.h"
+#include "esp_log.h"
+
+static const char* TAG = "Buzzer";
+
+Buzzer::Buzzer(ledc_timer_t timer_num, uint32_t freq_hz, int gpio_num,
+               ledc_channel_t channel)
+{
+    ledc_timer_config_t ledcTimerConfig;
+    ledcTimerConfig.speed_mode = LEDC_HIGH_SPEED_MODE;
+    ledcTimerConfig.duty_resolution = LEDC_TIMER_10_BIT;
+    ledcTimerConfig.timer_num = timer_num;
+    ledcTimerConfig.freq_hz = freq_hz;
+    ledcTimerConfig.clk_cfg = LEDC_AUTO_CLK;
+    ledc_timer_config(&ledcTimerConfig);
+
+    ledc_channel_config_t ledcChannelConfig;
+    ledcChannelConfig.gpio_num = gpio_num;
+    ledcChannelConfig.speed_mode = LEDC_HIGH_SPEED_MODE;
+    ledcChannelConfig.channel = channel;
+    ledcChannelConfig.intr_type = LEDC_INTR_DISABLE;
+    ledcChannelConfig.timer_sel = timer_num;
+    ledcChannelConfig.duty = 0;
+    ledcChannelConfig.hpoint = 0;
+    ledc_channel_config(&ledcChannelConfig);
+
+    _channel = channel;
+
+    ledc_fade_func_install(0);
+
+    ESP_LOGI(TAG, "Buzzer object created");
+}
+
+void Buzzer::TurnOnBuzzer()
+{
+    ledc_set_fade_time_and_start(LEDC_HIGH_SPEED_MODE, _channel, 512, 500, LEDC_FADE_NO_WAIT);
+}
+
+void Buzzer::TurnOffBuzzer()
+{
+    ledc_set_fade_time_and_start(LEDC_HIGH_SPEED_MODE, _channel, 0, 500, LEDC_FADE_NO_WAIT);
+}
