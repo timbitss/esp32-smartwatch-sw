@@ -1,9 +1,23 @@
-#include <cstdio>
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "driver/gpio.h"
-#include "I2C.h"
+/**\
+ * Copyright (c) 2020 Bosch Sensortec GmbH. All rights reserved.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ **/
+
+/**
+ * \ingroup bma4xy
+ * \defgroup bma423Examples BMA423 EXAMPLES
+ * @brief Reference Examples of BMA423
+ */
+
+/*!
+ * @ingroup bma423Examples
+ * @defgroup bma423ExampleAccel Accel data read
+ * @brief example to showcase reading accelerometer data
+ * \include accelerometer.c
+ */
+
+#include <stdio.h>
 #include "bma423.h"
 #include "bma4_common.h"
 
@@ -11,45 +25,27 @@
 #define GRAVITY_EARTH       (9.80665f)
 
 /*! Macro that holds the total number of accel x,y and z axes sample counts to be printed */
-#define ACCEL_SAMPLE_COUNT  100
-
-extern "C" void app_main(void);
-
-// Unique component tag for logging data.
-static const char *TAG = "APP_MAIN";
+#define ACCEL_SAMPLE_COUNT  UINT8_C(100)
 
 static float lsb_to_ms2(int16_t val, float g_range, uint8_t bit_width);
 
-
-void app_main(void)
+int main(void)
 {
-    struct bma4_dev bma{};
-    struct bma4_accel sens_data{};
-    struct bma4_accel_config accel_conf{};
-    int8_t rslt;
+    struct bma4_dev bma;
+    struct bma4_accel sens_data;
+    struct bma4_accel_config accel_conf;
+    int8_t_t rslt;
     float x, y, z;
 
     /* Variable that holds the accelerometer sample count */
     uint8_t n_data = ACCEL_SAMPLE_COUNT;
 
-    // Initialize I2C port.
-    constexpr int sda_io_num = GPIO_NUM_21;
-    constexpr int scl_io_num = GPIO_NUM_22;
-    constexpr uint32_t i2c_clk_speed = 400000; // 400 kHz
-
-    i2c_port_t port_num = I2C_NUM_0;
-    i2c_config_t i2c_conf;
-    i2c_conf.mode = I2C_MODE_MASTER;
-    i2c_conf.master.clk_speed = i2c_clk_speed;
-    i2c_conf.scl_io_num = scl_io_num;
-    i2c_conf.sda_io_num = sda_io_num;
-    i2c_conf.scl_pullup_en = false;
-    i2c_conf.sda_pullup_en = false;
-    i2c_conf.clk_flags = 0;
-
-    static I2C i2c_bus(port_num, &i2c_conf);
-
-    rslt = bma4_interface_selection(&bma, BMA42X_VARIANT, &i2c_bus);
+    /* Function to select interface between SPI and I2C, according to that the device structure gets updated
+     * Variant information given as parameter
+     *         For B variant        : BMA42X_B_VARIANT
+     *         For Non-B variant    : BMA42X_VARIANT
+     */
+    rslt = bma4_interface_selection(&bma, BMA42X_VARIANT);
     bma4_error_codes_print_result("bma4_interface_selection status", rslt);
 
     /* Sensor initialization */
@@ -92,9 +88,8 @@ void app_main(void)
     /* Set the accel configurations */
     rslt = bma4_set_accel_config(&accel_conf, &bma);
     bma4_error_codes_print_result("bma4_set_accel_config status", rslt);
-    ESP_LOGI(TAG,"Ax[m/s2], Ay[m/s2], Az[m/s2]");
-
-    for(;;)
+    printf("Ax[m/s2], Ay[m/s2], Az[m/s2]\r\n");
+    while (1)
     {
         /* Read the accel data */
         rslt = bma4_read_accel_xyz(&sens_data, &bma);
@@ -108,10 +103,20 @@ void app_main(void)
         printf("%.2f, %.2f, %.2f\r\n", x, y, z);
 
         /* Pause for 10ms, 100Hz output data rate */
-        vTaskDelay(pdMS_TO_TICKS((10)));
-    }
-}
+        bma.delay_us(10, bma.intf_ptr);
 
+        /* Decrement the count that determines the number of samples to be printed */
+        n_data--;
+
+        /* When the count reaches 0, break and exit the loop */
+        if (n_data == 0)
+        {
+            break;
+        }
+    }
+
+    return rslt;
+}
 
 /*! @brief Converts raw sensor values(LSB) to meters per seconds square.
  *
