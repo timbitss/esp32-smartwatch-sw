@@ -3,6 +3,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "driver/rtc_io.h"
+#include "esp_sleep.h"
 #include "esp32_smartwatch.h"
 #include "Buzzer.h"
 #include "ButtonDebouncer.h"
@@ -20,6 +22,7 @@ static uint8_t io_read_buttons();
 void RunTask1Hz(void *parameters);
 void RunTask200Hz(void * parameters);
 static void change_state(State next_state);
+static void configure_wakeup_sources();
 
 /**
  * Unique component tag for logging data.
@@ -44,8 +47,10 @@ enum State : uint8_t
 
 /**
  * Flag indicating if the alarm is enabled.
+ *
+ * @note Stored in RTC memory for retention in case alarm is triggered.
  */
-static bool alarm_enabled;
+RTC_DATA_ATTR static bool alarm_enabled;
 
 /**
  * Global structure acting as an interface to various peripherals.
@@ -56,6 +61,11 @@ struct Peripherals_t
     RTC_DS3231* rtc;
     ButtonDebouncer* buttonDebouncer;
 } peripherals;
+
+/**
+ * Time that both buttons were released for.
+ */
+static uint32_t time_released_ms;
 
 void app_main(void)
 {
@@ -86,11 +96,6 @@ void app_main(void)
     }
 
     /**
-     * Set alarm time to arbitrary value.
-     */
-    rtc.setAlarm1(rtc.now() - TimeSpan(60), DS3231_A1_Hour);
-
-    /**
      * Initialize button debouncer and button inputs.
      */
     gpio_config_t io_config;
@@ -105,13 +110,14 @@ void app_main(void)
     io_config.pull_up_en = GPIO_PULLUP_ENABLE;
     gpio_config(&io_config);
 
-    uint8_t switch_bitmask = 0x3; // Using two switches.
+    uint8_t switch_bitmask = BUTTONS_BITMASK; // Using two switches.
     static ButtonDebouncer buttonDebouncer(io_read_buttons, switch_bitmask);
 
     /**
      * Initialize buzzer.
      */
     static Buzzer buzzer(LEDC_TIMER_0, 4000, GPIO_NUM_33, LEDC_CHANNEL_0);
+
 
     /**
      * Create interface from statically-allocated objects.
@@ -120,8 +126,18 @@ void app_main(void)
     peripherals.rtc = &rtc;
     peripherals.buttonDebouncer = &buttonDebouncer;
 
-    // Initialize state machine mutex.
+    /**
+     * Initialize state machine mutex.
+     */
     statemachine_mutex = xSemaphoreCreateMutex();
+
+    /**
+     * Disable alarm
+     */
+    if(!alarm_enabled)
+    {
+        peripherals.rtc->disableAlarm1Interrupt();
+    }
 
     /**
      * Create tasks.
@@ -184,11 +200,22 @@ void RunTask1Hz(void *parameters)
          */
         peripherals.rtc->now().timestamp(current_time);
         peripherals.rtc->getAlarm1().timestamp(alarm_time, DateTime::TIMESTAMP_TIME);
-        ESP_LOGI(TAG, "(1Hz) Time: %s Alarm: %s State: %s Alarm %s",
+        ESP_LOGI(TAG, "(1Hz) Time: %s Alarm: %s State: %s Alarm %s Time released: %u",
                  current_time,
                  alarm_time,
                  state_names[present_state],
-                 alarm_enabled ? "enabled" : "disabled");
+                 alarm_enabled ? "enabled" : "disabled",
+                 time_released_ms);
+
+        /**
+         * Enter deep-sleep if inactive and alarm has been cleared.
+         */
+        if(time_released_ms >= INACTIVE_TIME_MS && present_state != ALARM_FIRED)
+        {
+            configure_wakeup_sources();
+            ESP_LOGI(TAG, "Going to sleep");
+            esp_deep_sleep_start();
+        }
 
         vTaskDelayUntil(&lastWakeTime, period_ms);
     }
@@ -227,8 +254,32 @@ void RunTask200Hz(void *parameters)
             if (timeheld1_ms == LONG_PRESS_DURATION_MS)
             {
                 alarm_enabled = alarm_enabled ? false : true;
+                if(alarm_enabled)
+                {
+                    peripherals.rtc->enableAlarm1Interrupt();
+                }
+                else
+                {
+                    peripherals.rtc->disableAlarm1Interrupt();
+                }
                 ESP_LOGI(TAG, "Button 1 long press");
             }
+        }
+
+        /**
+         * If all buttons are open, increment time released by 5 ms.
+         */
+        if ((button_states & BUTTONS_BITMASK) == 0x00)
+        {
+            time_released_ms += 5;
+        }
+
+        /**
+         * Reset time buttons were released if any button press is detected.
+         */
+        if (press_detected)
+        {
+            time_released_ms = 0;
         }
 
         /**
@@ -331,4 +382,19 @@ static void change_state(State next_state)
     xSemaphoreTake(statemachine_mutex, portMAX_DELAY);
     present_state = next_state;
     xSemaphoreGive(statemachine_mutex);
+}
+
+/**
+ * @brief Configure wakeup sources from deep sleep.
+ */
+static void configure_wakeup_sources()
+{
+    /* Wake up when button 0 is pressed */
+    esp_sleep_enable_ext0_wakeup(BUTTON0_GPIO_PIN, 0);
+
+    /* Wake up when alarm goes off */
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+    gpio_pulldown_dis(RTC_INTERRUPT_PIN);
+    gpio_pullup_en(RTC_INTERRUPT_PIN);
+    esp_sleep_enable_ext1_wakeup((1U << RTC_INTERRUPT_PIN), ESP_EXT1_WAKEUP_ALL_LOW);
 }

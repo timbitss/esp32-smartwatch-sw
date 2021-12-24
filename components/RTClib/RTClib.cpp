@@ -940,10 +940,6 @@ void RTC_DS3231::setAlarm1(const DateTime &dt, Ds3231Alarm1Mode alarm_mode)
     write_buf[3] = DY_DT ? bin2bcd(dowToDS3231(dt.dayOfTheWeek())) | A1M4 | DY_DT
                          : bin2bcd(dt.day()) | A1M4 | DY_DT;
     I2C_bus->WriteBytesThread(DS3231_ADDRESS, DS3231_ALARM1, 4, write_buf);
-
-    uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, I2C_bus);
-    ctrl |= 0x01; // Enable alarm 1 interrupt (AI1E)
-    write_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, ctrl, I2C_bus);
 }
 
 /**************************************************************************/
@@ -1083,4 +1079,24 @@ void RTC_DS3231::decrementAlarm1Minute()
 {
     const DateTime one_minute_prior = getAlarm1() - TimeSpan(60);
     setAlarm1(one_minute_prior, DS3231_A1_Hour); // Alarm triggered when hours, minutes, and seconds match.
+}
+
+/**
+ * @brief Enable alarm 1 to assert ~INT pin.
+ */
+void RTC_DS3231::enableAlarm1Interrupt()
+{
+    uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, I2C_bus);
+    ctrl |= 0x01; // Enable alarm 1 interrupt (AI1E)
+    write_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, ctrl, I2C_bus);
+}
+
+/**
+ * @brief Disable alarm 1 from asserting ~INT pin.
+ */
+void RTC_DS3231::disableAlarm1Interrupt()
+{
+    uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, I2C_bus);
+    ctrl &= ~0x01; // Disable alarm 1 interrupt (AI1E)
+    write_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, ctrl, I2C_bus);
 }

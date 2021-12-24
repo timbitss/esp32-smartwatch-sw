@@ -292,6 +292,9 @@ public:
   DateTime getAlarm1();
   void incrementAlarm1Minute();
   void decrementAlarm1Minute();
+  void enableAlarm1Interrupt();
+  void disableAlarm1Interrupt();
+
 protected:
   I2C *I2C_bus; ///< I2C bus connected to the RTC
 };
