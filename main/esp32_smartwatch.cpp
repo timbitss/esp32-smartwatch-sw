@@ -96,14 +96,19 @@ void app_main(void)
     rslt = bma4_set_accel_config(&accel_conf, &bma);
     bma4_error_codes_print_result("bma4_set_accel_config status", rslt);
 
+    struct bma423_axes_remap bma423AxesRemap{};
+    bma423AxesRemap.x_axis = 1;
+    bma423AxesRemap.y_axis = 0; // Flip x and y-axis.
+    bma423AxesRemap.z_axis = 2;
+    rslt = bma423_set_remap_axes(&bma423AxesRemap, &bma);
+    bma4_error_codes_print_result("Remap axes", rslt);
+
     /* Enable wrist wear feature */
     rslt = bma423_feature_enable(BMA423_WRIST_WEAR, BMA4_ENABLE, &bma);
     bma4_error_codes_print_result("bma4_feature_enable status", rslt);
 
     rslt = bma423_map_interrupt(BMA4_INTR1_MAP, BMA423_WRIST_WEAR_INT, BMA4_ENABLE, &bma);
     bma4_error_codes_print_result("bma423_map_interrupt", rslt);
-
-    rslt =
 
     ESP_LOGI(TAG, "Move wrist");
 
@@ -116,6 +121,10 @@ void app_main(void)
         if (int_status & BMA423_WRIST_WEAR_INT)
         {
             ESP_LOGI(TAG, "Wrist wear interrupt received");
+        }
+        if (int_status & BMA423_ERROR_INT)
+        {
+            ESP_LOGI(TAG, "Error interrupt.");
         }
         int_status = 0;
 
