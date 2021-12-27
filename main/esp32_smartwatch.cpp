@@ -48,7 +48,7 @@ enum State : uint8_t
 /**
  * Flag indicating if the alarm is enabled.
  *
- * @note Stored in RTC memory for retention in case alarm is triggered.
+ * @note Stored in RTC retention memory in case the RTC alarm wakes up the device from deep sleep.
  */
 RTC_DATA_ATTR static bool alarm_enabled;
 
@@ -118,7 +118,6 @@ void app_main(void)
      */
     static Buzzer buzzer(LEDC_TIMER_0, 4000, GPIO_NUM_33, LEDC_CHANNEL_0);
 
-
     /**
      * Create interface from statically-allocated objects.
      */
@@ -139,6 +138,7 @@ void app_main(void)
         peripherals.rtc->disableAlarm1Interrupt();
     }
 
+    rtc.setAlarm1(DateTime(__DATE__, __TIME__) - TimeSpan(1), DS3231_A1_Hour);
     /**
      * Create tasks.
      */
@@ -178,21 +178,25 @@ void RunTask1Hz(void *parameters)
     for(;;)
     {
         /**
-         *  Do something if alarm was fired.
-         */
+        *  Do something if alarm was fired.
+        */
         if(peripherals.rtc->alarmFired(ALARM1))
         {
             if(alarm_enabled)
             {
-                if(buzzer_flag & 0x01) peripherals.buzzer->TurnOnBuzzer();
-                else                   peripherals.buzzer->TurnOffBuzzer();
-                buzzer_flag ^= 0x01;
                 present_state = ALARM_FIRED;
             }
             else
             {
                 peripherals.rtc->clearAlarm(ALARM1);
             }
+        }
+
+        if(present_state == ALARM_FIRED)
+        {
+            if(buzzer_flag & 0x01) peripherals.buzzer->TurnOnBuzzer();
+            else                   peripherals.buzzer->TurnOffBuzzer();
+            buzzer_flag ^= 0x01;
         }
 
         /**
@@ -208,7 +212,7 @@ void RunTask1Hz(void *parameters)
                  time_released_ms);
 
         /**
-         * Enter deep-sleep if inactive and alarm has been cleared.
+         * Enter deep-sleep if inactive for longer than INACTIVE_TIME_MS and alarm has been cleared.
          */
         if(time_released_ms >= INACTIVE_TIME_MS && present_state != ALARM_FIRED)
         {
