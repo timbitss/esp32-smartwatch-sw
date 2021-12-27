@@ -10,6 +10,8 @@
 #include "ButtonDebouncer.h"
 #include "I2C.h"
 #include "RTClib.h"
+#include "bma423.h"
+#include "bma4_common.h"
 
 extern "C" void app_main(void);
 
@@ -23,6 +25,7 @@ void RunTask1Hz(void *parameters);
 void RunTask200Hz(void * parameters);
 static void change_state(State next_state);
 static void configure_wakeup_sources();
+static void initialize_bma423();
 
 /**
  * Unique component tag for logging data.
@@ -60,6 +63,8 @@ struct Peripherals_t
     Buzzer* buzzer;
     RTC_DS3231* rtc;
     ButtonDebouncer* buttonDebouncer;
+    I2C* i2c_bus;
+    struct bma4_dev bma;
 } peripherals;
 
 /**
@@ -73,11 +78,13 @@ void app_main(void)
      * Initialize I2C bus.
      */
     static I2C i2c_bus(I2C_NUM_0, GPIO_NUM_21, GPIO_NUM_22, 400000, false);
+    peripherals.i2c_bus = &i2c_bus;
 
     /**
      * Initialize RTC.
      */
     static RTC_DS3231 rtc{};
+    peripherals.rtc = &rtc;
 
     if(!rtc.begin(&i2c_bus))
     {
@@ -112,18 +119,15 @@ void app_main(void)
 
     uint8_t switch_bitmask = BUTTONS_BITMASK; // Using two switches.
     static ButtonDebouncer buttonDebouncer(io_read_buttons, switch_bitmask);
+    peripherals.buttonDebouncer = &buttonDebouncer;
 
     /**
      * Initialize buzzer.
      */
     static Buzzer buzzer(LEDC_TIMER_0, 4000, GPIO_NUM_33, LEDC_CHANNEL_0);
-
-    /**
-     * Create interface from statically-allocated objects.
-     */
     peripherals.buzzer = &buzzer;
-    peripherals.rtc = &rtc;
-    peripherals.buttonDebouncer = &buttonDebouncer;
+
+    initialize_bma423();
 
     /**
      * Initialize state machine mutex.
@@ -172,6 +176,7 @@ void RunTask1Hz(void *parameters)
     char current_time[25] = {}, alarm_time[25] = {};
     static const char* state_names[NUM_OF_STATES] = {"NORMAL", "ALARM_ADJUST", "ALARM_FIRED"};
     uint8_t buzzer_flag = 0;
+    uint16_t bma423_int_status = 0;
 
     lastWakeTime = xTaskGetTickCount();
 
@@ -197,6 +202,15 @@ void RunTask1Hz(void *parameters)
             if(buzzer_flag & 0x01) peripherals.buzzer->TurnOnBuzzer();
             else                   peripherals.buzzer->TurnOffBuzzer();
             buzzer_flag ^= 0x01;
+        }
+
+        /**
+         * Check if wrist wear interrupt was triggered.
+         */
+        bma423_read_int_status(&bma423_int_status, &peripherals.bma);
+        if(bma423_int_status & BMA423_WRIST_WEAR_INT)
+        {
+            ESP_LOGI(TAG, "Wrist wear interrupt detected");
         }
 
         /**
@@ -401,4 +415,69 @@ static void configure_wakeup_sources()
     gpio_pulldown_dis(RTC_INTERRUPT_PIN);
     gpio_pullup_en(RTC_INTERRUPT_PIN);
     esp_sleep_enable_ext1_wakeup((1U << RTC_INTERRUPT_PIN), ESP_EXT1_WAKEUP_ALL_LOW);
+}
+
+static void initialize_bma423()
+{
+    struct bma4_accel_config accel_conf{};
+    int8_t rslt;
+
+    /* Function to select interface between SPI and I2C, according to that the device structure gets updated
+     * Variant information given as parameter
+     *         For B variant        : BMA42X_B_VARIANT
+     *         For Non-B variant    : BMA42X_VARIANT
+     */
+    rslt = bma4_interface_selection(&peripherals.bma, BMA42X_VARIANT, peripherals.i2c_bus);
+    bma4_error_codes_print_result("bma4_interface_selection status", rslt);
+
+    /* Sensor initialization */
+    rslt = bma423_init(&peripherals.bma);
+    bma4_error_codes_print_result("bma423_init", rslt);
+
+    /* Upload the configuration file to enable the features of the sensor. */
+    rslt = bma423_write_config_file(&peripherals.bma);
+    bma4_error_codes_print_result("bma423_write_config", rslt);
+
+    /* Enable the accelerometer */
+    rslt = bma4_set_accel_enable(1, &peripherals.bma);
+    bma4_error_codes_print_result("bma4_set_accel_enable status", rslt);
+
+    /* Accelerometer Configuration Setting */
+    /* Output data Rate */
+    accel_conf.odr = BMA4_OUTPUT_DATA_RATE_100HZ;
+
+    /* Gravity range of the sensor (+/- 2G, 4G, 8G, 16G) */
+    accel_conf.range = BMA4_ACCEL_RANGE_2G;
+
+    /* Bandwidth configure number of sensor samples required to average
+     * if value = 2, then 4 samples are averaged
+     * averaged samples = 2^(val(accel bandwidth))
+     * Note1 : More info refer datasheets
+     * Note2 : A higher number of averaged samples will result in a lower noise level of the signal, but since the
+     * performance power mode phase is increased, the power consumption will also rise.
+     */
+    accel_conf.bandwidth = BMA4_ACCEL_NORMAL_AVG4;
+
+    /* Enable the filter performance mode where averaging of samples
+     * will be done based on above set bandwidth and ODR.
+     * There are two modes
+     *  0 -> Averaging samples (Default)
+     *  1 -> No averaging
+     * For more info on No Averaging mode refer datasheets.
+     */
+    accel_conf.perf_mode = BMA4_CIC_AVG_MODE;
+
+    /* Set the accel configurations */
+    rslt = bma4_set_accel_config(&accel_conf, &peripherals.bma);
+    bma4_error_codes_print_result("bma4_set_accel_config status", rslt);
+
+    /* Enable single & double tap feature */
+    rslt = bma423_feature_enable(BMA423_WRIST_WEAR, BMA4_ENABLE, &peripherals.bma);
+    bma4_error_codes_print_result("bma423_feature_enable status", rslt);
+
+    /* Mapping line interrupt 1 with that of wrist wear feature interrupts */
+    rslt = bma423_map_interrupt(BMA4_INTR1_MAP, BMA423_WRIST_WEAR_INT, BMA4_ENABLE, &peripherals.bma);
+    bma4_error_codes_print_result("bma423_map_interrupt", rslt);
+
+    ESP_LOGI(TAG, "BMA423 Initialized");
 }
