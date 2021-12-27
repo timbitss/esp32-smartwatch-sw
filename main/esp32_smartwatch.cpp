@@ -23,15 +23,6 @@ static float lsb_to_ms2(int16_t val, float g_range, uint8_t bit_width);
 
 void app_main(void)
 {
-    struct bma4_dev bma{};
-    struct bma4_accel sens_data{};
-    struct bma4_accel_config accel_conf{};
-    int8_t rslt;
-    float x, y, z;
-
-    /* Variable that holds the accelerometer sample count */
-    uint8_t n_data = ACCEL_SAMPLE_COUNT;
-
     // Initialize I2C port.
     constexpr int sda_io_num = GPIO_NUM_21;
     constexpr int scl_io_num = GPIO_NUM_22;
@@ -49,22 +40,34 @@ void app_main(void)
 
     static I2C i2c_bus(port_num, &i2c_conf);
 
+    struct bma4_dev bma{};
+    struct bma423_any_no_mot_config any_no_mot{};
+    struct bma4_accel_config accel_conf{};
+    int8_t rslt;
+    uint16_t int_status = 0;
+
+
+    /* Function to select interface between SPI and I2C, according to that the device structure gets updated
+     * Variant information given as parameter
+     *         For B variant        : BMA42X_B_VARIANT
+     *         For Non-B variant    : BMA42X_VARIANT
+     */
     rslt = bma4_interface_selection(&bma, BMA42X_VARIANT, &i2c_bus);
     bma4_error_codes_print_result("bma4_interface_selection status", rslt);
 
     /* Sensor initialization */
     rslt = bma423_init(&bma);
-    bma4_error_codes_print_result("bma423_init", rslt);
+    bma4_error_codes_print_result("bma423_init status", rslt);
 
     /* Upload the configuration file to enable the features of the sensor. */
     rslt = bma423_write_config_file(&bma);
-    bma4_error_codes_print_result("bma423_write_config", rslt);
+    bma4_error_codes_print_result("bma423_write_config status", rslt);
 
     /* Enable the accelerometer */
     rslt = bma4_set_accel_enable(1, &bma);
     bma4_error_codes_print_result("bma4_set_accel_enable status", rslt);
 
-    /* Accelerometer configuration Setting */
+    /* Accelerometer Configuration Setting */
     /* Output data Rate */
     accel_conf.odr = BMA4_OUTPUT_DATA_RATE_100HZ;
 
@@ -92,23 +95,30 @@ void app_main(void)
     /* Set the accel configurations */
     rslt = bma4_set_accel_config(&accel_conf, &bma);
     bma4_error_codes_print_result("bma4_set_accel_config status", rslt);
-    ESP_LOGI(TAG,"Ax[m/s2], Ay[m/s2], Az[m/s2]");
 
-    for(;;)
+    /* Enable wrist wear feature */
+    rslt = bma423_feature_enable(BMA423_WRIST_WEAR, BMA4_ENABLE, &bma);
+    bma4_error_codes_print_result("bma4_feature_enable status", rslt);
+
+    rslt = bma423_map_interrupt(BMA4_INTR1_MAP, BMA423_WRIST_WEAR_INT, BMA4_ENABLE, &bma);
+    bma4_error_codes_print_result("bma423_map_interrupt", rslt);
+
+    rslt =
+
+    ESP_LOGI(TAG, "Move wrist");
+
+    for (;;)
     {
-        /* Read the accel data */
-        rslt = bma4_read_accel_xyz(&sens_data, &bma);
+        /* Read the interrupt register to check if wrist wear interrupt is received */
+        bma423_read_int_status(&int_status, &bma);
 
-        /* Converting lsb to meters per seconds square for 12 bit accelerometer at 2G range */
-        x = lsb_to_ms2(sens_data.x, 2, bma.resolution);
-        y = lsb_to_ms2(sens_data.y, 2, bma.resolution);
-        z = lsb_to_ms2(sens_data.z, 2, bma.resolution);
+        /* Check if any-motion interrupt is triggered */
+        if (int_status & BMA423_WRIST_WEAR_INT)
+        {
+            ESP_LOGI(TAG, "Wrist wear interrupt received");
+        }
+        int_status = 0;
 
-        /* Print the data in m/s2 */
-        printf("%.2f, %.2f, %.2f\r\n", x, y, z);
-
-        /* Pause for 10ms, 100Hz output data rate */
-        vTaskDelay(pdMS_TO_TICKS((10)));
     }
 }
 

@@ -88,7 +88,7 @@ int8_t bma4_interface_selection(struct bma4_dev *bma, uint8_t variant, I2C* i2c_
  *
  *  @return void.
  */
-void bma4_error_codes_print_result(const char api_name[], uint16_t rslt);
+void bma4_error_codes_print_result(const char api_name[], int8_t rslt);
 
 #ifdef __cplusplus
 }

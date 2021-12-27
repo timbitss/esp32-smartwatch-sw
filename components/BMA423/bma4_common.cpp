@@ -102,24 +102,24 @@ int8_t bma4_interface_selection(struct bma4_dev *bma, uint8_t variant, I2C* i2c_
 /*!
  *  @brief Prints the execution status of the APIs.
  */
-void bma4_error_codes_print_result(const char api_name[], uint16_t rslt)
+void bma4_error_codes_print_result(const char api_name[], int8_t rslt)
 {
     if (rslt != BMA4_OK)
     {
         ESP_LOGE(TAG, "%s\t", api_name);
-        if (rslt & BMA4_E_NULL_PTR)
+        if (rslt == BMA4_E_NULL_PTR)
         {
             ESP_LOGE(TAG, "Error [%d] : Null pointer\r\n", rslt);
         }
-        else if (rslt & BMA4_E_CONFIG_STREAM_ERROR)
+        else if (rslt == BMA4_E_CONFIG_STREAM_ERROR)
         {
             ESP_LOGE(TAG, "Error [%d] : Invalid configuration stream\r\n", rslt);
         }
-        else if (rslt & BMA4_E_SELF_TEST_FAIL)
+        else if (rslt == BMA4_E_SELF_TEST_FAIL)
         {
             ESP_LOGE(TAG, "Error [%d] : Self test failed\r\n", rslt);
         }
-        else if (rslt & BMA4_E_INVALID_SENSOR)
+        else if (rslt == BMA4_E_INVALID_SENSOR)
         {
             ESP_LOGE(TAG, "Error [%d] : Device not found\r\n", rslt);
         }

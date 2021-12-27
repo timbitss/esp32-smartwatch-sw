@@ -50,6 +50,11 @@
 /**\name        Header files
  ****************************************************************************/
 #include "bma4.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+static const char* TAG = "BMA4";
 
 /***************************************************************************/
 
@@ -915,10 +920,11 @@ int8_t bma4_write_config_file(struct bma4_dev *dev)
                     /* Wait till ASIC is initialized. Refer the data-sheet for
                      * more information
                      */
-                    dev->delay_us(BMA4_MS_TO_US(150), dev->intf_ptr);
+                    vTaskDelay(pdMS_TO_TICKS(150));
 
                     /* Read the status of config stream operation */
                     rslt = bma4_read_regs(BMA4_INTERNAL_STAT, &config_stream_status, 1, dev);
+                    ESP_LOGI(TAG, "%x", config_stream_status);
                     config_stream_status = config_stream_status & BMA4_CONFIG_STREAM_MESSAGE_MSK;
 
                     if (rslt == BMA4_OK)
