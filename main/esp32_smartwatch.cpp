@@ -144,14 +144,6 @@ void app_main(void)
                             nullptr,
                             APP_CPU_NUM);
 
-    xTaskCreatePinnedToCore(RunTask100Hz,
-                            "RunTask100Hz",
-                            TASK100HZ_STACK_SIZE,
-                            nullptr,
-                            1,
-                            nullptr,
-                            APP_CPU_NUM);
-
     xTaskCreatePinnedToCore(RunTask200Hz,
     "RunTask200Hz",
     TASK200HZ_STACK_SIZE,
@@ -220,28 +212,6 @@ void RunTask1Hz(void *parameters)
     }
 }
 
-void RunTask100Hz(void *parameters)
-{
-    TickType_t lastWakeTime;
-    const TickType_t period_ms = pdMS_TO_TICKS( 10);
-    uint16_t bma423_int_status = 0;
-
-    lastWakeTime = xTaskGetTickCount();
-
-    for (;;)
-    {
-        /* Check if wrist wear interrupt was triggered. */
-        bma423_read_int_status(&bma423_int_status, &peripherals.bma);
-        if (bma423_int_status & BMA423_WRIST_WEAR_INT)
-        {
-            ESP_LOGI(TAG, "Wrist wear interrupt triggered");
-            time_inactive_ms = 0;
-        }
-
-        vTaskDelayUntil(&lastWakeTime, period_ms);
-    }
-}
-
 void RunTask200Hz(void *parameters)
 {
     TickType_t lastWakeTime;
@@ -250,6 +220,7 @@ void RunTask200Hz(void *parameters)
     uint8_t button_states = 0;
     uint8_t press_detected = 0, press_released = 0;
     uint32_t timeheld0_ms = 0, timeheld1_ms = 0;    // Time buttons were held for in ms.
+    uint16_t bma423_int_status = 0;
 
     lastWakeTime = xTaskGetTickCount();
 
@@ -293,10 +264,13 @@ void RunTask200Hz(void *parameters)
             time_inactive_ms += 5;
         }
 
+        /* Check if wrist wear interrupt was triggered. */
+        bma423_read_int_status(&bma423_int_status, &peripherals.bma);
+
         /**
-         * Reset time buttons were released if any button press is detected.
+         * Reset inactive time if any button press is detected.
          */
-        if (press_detected)
+        if (press_detected || bma423_int_status & BMA423_WRIST_WEAR_INT)
         {
             time_inactive_ms = 0;
         }
@@ -430,69 +404,70 @@ static void initialize_bma423()
      */
     rslt = bma4_interface_selection(&peripherals.bma, BMA42X_VARIANT, peripherals.i2c_bus);
     bma4_error_codes_print_result("bma4_interface_selection status", rslt);
-
+    
     /* Sensor initialization */
     rslt = bma423_init(&peripherals.bma);
     bma4_error_codes_print_result("bma423_init", rslt);
 
-    /* Upload the configuration file to enable the features of the sensor. */
-    rslt = bma423_write_config_file(&peripherals.bma);
-    bma4_error_codes_print_result("bma423_write_config", rslt);
+    if(esp_reset_reason() == ESP_RST_POWERON)
+    {
+        /* Upload the configuration file to enable the features of the sensor. */
+        rslt = bma423_write_config_file(&peripherals.bma);
+        bma4_error_codes_print_result("bma423_write_config", rslt);
 
-    /* Enable the accelerometer */
-    rslt = bma4_set_accel_enable(1, &peripherals.bma);
-    bma4_error_codes_print_result("bma4_set_accel_enable status", rslt);
+        /* Enable the accelerometer */
+        rslt = bma4_set_accel_enable(1, &peripherals.bma);
+        bma4_error_codes_print_result("bma4_set_accel_enable status", rslt);
 
-    /* Accelerometer Configuration Setting */
-    /* Output data Rate */
-    accel_conf.odr = BMA4_OUTPUT_DATA_RATE_100HZ;
+        /* Accelerometer Configuration Setting */
+        /* Output data Rate */
+        accel_conf.odr = BMA4_OUTPUT_DATA_RATE_100HZ;
 
-    /* Gravity range of the sensor (+/- 2G, 4G, 8G, 16G) */
-    accel_conf.range = BMA4_ACCEL_RANGE_2G;
+        /* Gravity range of the sensor (+/- 2G, 4G, 8G, 16G) */
+        accel_conf.range = BMA4_ACCEL_RANGE_2G;
 
-    /* Bandwidth configure number of sensor samples required to average
-     * if value = 2, then 4 samples are averaged
-     * averaged samples = 2^(val(accel bandwidth))
-     * Note1 : More info refer datasheets
-     * Note2 : A higher number of averaged samples will result in a lower noise level of the signal, but since the
-     * performance power mode phase is increased, the power consumption will also rise.
-     */
-    accel_conf.bandwidth = BMA4_ACCEL_NORMAL_AVG4;
+        /* Bandwidth configure number of sensor samples required to average
+         * if value = 2, then 4 samples are averaged
+         * averaged samples = 2^(val(accel bandwidth))
+         * Note1 : More info refer datasheets
+         * Note2 : A higher number of averaged samples will result in a lower noise level of the signal, but since the
+         * performance power mode phase is increased, the power consumption will also rise.
+         */
+        accel_conf.bandwidth = BMA4_ACCEL_NORMAL_AVG4;
 
-    /* Enable the filter performance mode where averaging of samples
-     * will be done based on above set bandwidth and ODR.
-     * There are two modes
-     *  0 -> Averaging samples (Default)
-     *  1 -> No averaging
-     * For more info on No Averaging mode refer datasheets.
-     */
-    accel_conf.perf_mode = BMA4_CIC_AVG_MODE;
+        /* Enable the filter performance mode where averaging of samples
+         * will be done based on above set bandwidth and ODR.
+         * There are two modes
+         *  0 -> Averaging samples (Default)
+         *  1 -> No averaging
+         * For more info on No Averaging mode refer datasheets.
+         */
+        accel_conf.perf_mode = BMA4_CIC_AVG_MODE;
 
-    /* Set the accel configurations */
-    rslt = bma4_set_accel_config(&accel_conf, &peripherals.bma);
-    bma4_error_codes_print_result("bma4_set_accel_config status", rslt);
+        /* Set the accel configurations */
+        rslt = bma4_set_accel_config(&accel_conf, &peripherals.bma);
+        bma4_error_codes_print_result("bma4_set_accel_config status", rslt);
 
-    /* Enable single & double tap feature */
-    rslt = bma423_feature_enable(BMA423_WRIST_WEAR, BMA4_ENABLE, &peripherals.bma);
-    bma4_error_codes_print_result("bma423_feature_enable status", rslt);
+        /* Enable single & double tap feature */
+        rslt = bma423_feature_enable(BMA423_WRIST_WEAR, BMA4_ENABLE, &peripherals.bma);
+        bma4_error_codes_print_result("bma423_feature_enable status", rslt);
 
-    /* Mapping line interrupt 1 with that of wrist wear feature interrupts */
-    rslt = bma423_map_interrupt(BMA4_INTR1_MAP, BMA423_WRIST_WEAR_INT, BMA4_ENABLE, &peripherals.bma);
-    bma4_error_codes_print_result("bma423_map_interrupt", rslt);
+        /* Mapping line interrupt 1 with that of wrist wear feature interrupts */
+        rslt = bma423_map_interrupt(BMA4_INTR1_MAP, BMA423_WRIST_WEAR_INT, BMA4_ENABLE, &peripherals.bma);
+        bma4_error_codes_print_result("bma423_map_interrupt", rslt);
 
-    /* Enable output for INT1 pin (active-low, push-pull) */
-    bma4_int_pin_config bma4IntPinConfig{};
-    bma4IntPinConfig.output_en = 0xFF;
-    bma4_set_int_pin_config(&bma4IntPinConfig, BMA4_INTR1_MAP, &peripherals.bma);
+        /* Enable output for INT1 pin (active-low, push-pull) */
+        bma4_int_pin_config bma4IntPinConfig{};
+        bma4IntPinConfig.output_en = 0xFF;
+        bma4_set_int_pin_config(&bma4IntPinConfig, BMA4_INTR1_MAP, &peripherals.bma);
 
-    /* Configure INT1 pint as input */
-    gpio_config_t io_config;
-    io_config.pin_bit_mask = (1 << GPIO_NUM_4);
-    io_config.mode = GPIO_MODE_INPUT;
-    io_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    io_config.pull_up_en = GPIO_PULLUP_DISABLE;
-    io_config.intr_type = GPIO_INTR_NEGEDGE;
-    gpio_config(&io_config);
+        /* Flip y and x-axis for wrist wear feature. */
+        bma423_axes_remap bma423AxesRemap{};
+        bma423AxesRemap.x_axis = 1;
+        bma423AxesRemap.y_axis = 0;
+        bma423AxesRemap.z_axis = 2;
+        bma423_set_remap_axes(&bma423AxesRemap, &peripherals.bma);
 
-    ESP_LOGI(TAG, "BMA423 Initialized");
+        ESP_LOGI(TAG, "BMA423 Initialized");
+    }
 }

@@ -16,7 +16,7 @@
 #define LONG_PRESS_DURATION_MS 1500 // Button pressed for PRESS_DURATION_MS is considered a long press.
 
 // Sleep
-#define INACTIVE_TIME_MS 20000 // Enter deep-sleep mode if inactive for more than INACTIVE_TIME_MS.
+#define INACTIVE_TIME_MS 10000 // Enter deep-sleep mode if inactive for more than INACTIVE_TIME_MS.
 
 // RTC
 #define RTC_INTERRUPT_PIN GPIO_NUM_14
