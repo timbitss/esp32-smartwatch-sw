@@ -1107,13 +1107,6 @@ int8_t bma423_double_tap_get_sensitivity(uint8_t *sensitivity, struct bma4_dev *
  */
 int8_t bma423_get_version_config(uint16_t *config_major, uint16_t *config_minor, struct bma4_dev *dev);
 
-/**
- * @brief Perform soft-reset/power cycle of device.
- *
- * @param dev : Structure instance of bma4_dev.
- */
-void bma423_soft_reset(struct bma4_dev *dev);
-
 #ifdef __cplusplus
 }
 #endif /*End of CPP guard */

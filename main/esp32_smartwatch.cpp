@@ -1,5 +1,6 @@
 #include <cstdio>
 #include "esp_log.h"
+#include "soc/soc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
@@ -22,6 +23,7 @@ enum State : uint8_t;
  */
 static uint8_t io_read_buttons();
 void RunTask1Hz(void *parameters);
+void RunTask100Hz(void *parameters);
 void RunTask200Hz(void * parameters);
 static void change_state(State next_state);
 static void configure_wakeup_sources();
@@ -68,21 +70,17 @@ struct Peripherals_t
 } peripherals;
 
 /**
- * Time that both buttons were released for.
+ * Time that device was inactive without any button presses or wrist tilt.
  */
-static uint32_t time_released_ms;
+static uint32_t time_inactive_ms;
 
 void app_main(void)
 {
-    /**
-     * Initialize I2C bus.
-     */
+    /* Initialize I2C bus. */
     static I2C i2c_bus(I2C_NUM_0, GPIO_NUM_21, GPIO_NUM_22, 400000, false);
     peripherals.i2c_bus = &i2c_bus;
 
-    /**
-     * Initialize RTC.
-     */
+    /* Initialize RTC. */
     static RTC_DS3231 rtc{};
     peripherals.rtc = &rtc;
 
@@ -102,9 +100,7 @@ void app_main(void)
         rtc.adjust(DateTime(__DATE__, __TIME__)); // Set RTC to time and date of compilation.
     }
 
-    /**
-     * Initialize button debouncer and button inputs.
-     */
+    /* Initialize button debouncer and button inputs. */
     gpio_config_t io_config;
     io_config.pin_bit_mask = (1 << GPIO_NUM_13);
     io_config.mode = GPIO_MODE_INPUT;
@@ -121,31 +117,25 @@ void app_main(void)
     static ButtonDebouncer buttonDebouncer(io_read_buttons, switch_bitmask);
     peripherals.buttonDebouncer = &buttonDebouncer;
 
-    /**
-     * Initialize buzzer.
-     */
+    /* Initialize buzzer. */
     static Buzzer buzzer(LEDC_TIMER_0, 4000, GPIO_NUM_33, LEDC_CHANNEL_0);
     peripherals.buzzer = &buzzer;
 
+    /* Initialize accelerometer */
     initialize_bma423();
 
-    /**
-     * Initialize state machine mutex.
-     */
+    /* Initialize state machine mutex. */
     statemachine_mutex = xSemaphoreCreateMutex();
 
-    /**
-     * Disable alarm
-     */
+    /* Disable alarm. */
     if(!alarm_enabled)
     {
         peripherals.rtc->disableAlarm1Interrupt();
     }
 
     rtc.setAlarm1(DateTime(__DATE__, __TIME__) - TimeSpan(1), DS3231_A1_Hour);
-    /**
-     * Create tasks.
-     */
+
+    /* Create tasks. */
     xTaskCreatePinnedToCore(RunTask1Hz,
                             "RunTask1Hz",
                             TASK1HZ_STACK_SIZE,
@@ -154,6 +144,13 @@ void app_main(void)
                             nullptr,
                             APP_CPU_NUM);
 
+    xTaskCreatePinnedToCore(RunTask100Hz,
+                            "RunTask100Hz",
+                            TASK100HZ_STACK_SIZE,
+                            nullptr,
+                            1,
+                            nullptr,
+                            APP_CPU_NUM);
 
     xTaskCreatePinnedToCore(RunTask200Hz,
     "RunTask200Hz",
@@ -176,15 +173,12 @@ void RunTask1Hz(void *parameters)
     char current_time[25] = {}, alarm_time[25] = {};
     static const char* state_names[NUM_OF_STATES] = {"NORMAL", "ALARM_ADJUST", "ALARM_FIRED"};
     uint8_t buzzer_flag = 0;
-    uint16_t bma423_int_status = 0;
 
     lastWakeTime = xTaskGetTickCount();
 
     for(;;)
     {
-        /**
-        *  Do something if alarm was fired.
-        */
+        /* Do something if alarm was fired. */
         if(peripherals.rtc->alarmFired(ALARM1))
         {
             if(alarm_enabled)
@@ -204,18 +198,7 @@ void RunTask1Hz(void *parameters)
             buzzer_flag ^= 0x01;
         }
 
-        /**
-         * Check if wrist wear interrupt was triggered.
-         */
-        bma423_read_int_status(&bma423_int_status, &peripherals.bma);
-        if(bma423_int_status & BMA423_WRIST_WEAR_INT)
-        {
-            ESP_LOGI(TAG, "Wrist wear interrupt detected");
-        }
-
-        /**
-         * Display various information to the user.
-         */
+        /* Display various information to the user. */
         peripherals.rtc->now().timestamp(current_time);
         peripherals.rtc->getAlarm1().timestamp(alarm_time, DateTime::TIMESTAMP_TIME);
         ESP_LOGI(TAG, "(1Hz) Time: %s Alarm: %s State: %s Alarm %s Time released: %u",
@@ -223,16 +206,36 @@ void RunTask1Hz(void *parameters)
                  alarm_time,
                  state_names[present_state],
                  alarm_enabled ? "enabled" : "disabled",
-                 time_released_ms);
+                 time_inactive_ms);
 
-        /**
-         * Enter deep-sleep if inactive for longer than INACTIVE_TIME_MS and alarm has been cleared.
-         */
-        if(time_released_ms >= INACTIVE_TIME_MS && present_state != ALARM_FIRED)
+        /* Enter deep-sleep if inactive for longer than INACTIVE_TIME_MS and alarm has been cleared. */
+        if(time_inactive_ms >= INACTIVE_TIME_MS && present_state != ALARM_FIRED)
         {
             configure_wakeup_sources();
             ESP_LOGI(TAG, "Going to sleep");
             esp_deep_sleep_start();
+        }
+
+        vTaskDelayUntil(&lastWakeTime, period_ms);
+    }
+}
+
+void RunTask100Hz(void *parameters)
+{
+    TickType_t lastWakeTime;
+    const TickType_t period_ms = pdMS_TO_TICKS( 10);
+    uint16_t bma423_int_status = 0;
+
+    lastWakeTime = xTaskGetTickCount();
+
+    for (;;)
+    {
+        /* Check if wrist wear interrupt was triggered. */
+        bma423_read_int_status(&bma423_int_status, &peripherals.bma);
+        if (bma423_int_status & BMA423_WRIST_WEAR_INT)
+        {
+            ESP_LOGI(TAG, "Wrist wear interrupt triggered");
+            time_inactive_ms = 0;
         }
 
         vTaskDelayUntil(&lastWakeTime, period_ms);
@@ -254,9 +257,7 @@ void RunTask200Hz(void *parameters)
     {
         peripherals.buttonDebouncer->ProcessSwitches200Hz(&button_states, &press_detected, &press_released);
 
-        /**
-         * Do something if button is held for more than LONG_PRESS_DURATION_MS.
-         */
+        /* Do something if button is held for more than LONG_PRESS_DURATION_MS. */
         if (button_states & BUTTON0_BITMASK)
         {
             timeheld0_ms += 5;
@@ -289,7 +290,7 @@ void RunTask200Hz(void *parameters)
          */
         if ((button_states & BUTTONS_BITMASK) == 0x00)
         {
-            time_released_ms += 5;
+            time_inactive_ms += 5;
         }
 
         /**
@@ -297,7 +298,7 @@ void RunTask200Hz(void *parameters)
          */
         if (press_detected)
         {
-            time_released_ms = 0;
+            time_inactive_ms = 0;
         }
 
         /**
@@ -478,6 +479,20 @@ static void initialize_bma423()
     /* Mapping line interrupt 1 with that of wrist wear feature interrupts */
     rslt = bma423_map_interrupt(BMA4_INTR1_MAP, BMA423_WRIST_WEAR_INT, BMA4_ENABLE, &peripherals.bma);
     bma4_error_codes_print_result("bma423_map_interrupt", rslt);
+
+    /* Enable output for INT1 pin (active-low, push-pull) */
+    bma4_int_pin_config bma4IntPinConfig{};
+    bma4IntPinConfig.output_en = 0xFF;
+    bma4_set_int_pin_config(&bma4IntPinConfig, BMA4_INTR1_MAP, &peripherals.bma);
+
+    /* Configure INT1 pint as input */
+    gpio_config_t io_config;
+    io_config.pin_bit_mask = (1 << GPIO_NUM_4);
+    io_config.mode = GPIO_MODE_INPUT;
+    io_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_config.pull_up_en = GPIO_PULLUP_DISABLE;
+    io_config.intr_type = GPIO_INTR_NEGEDGE;
+    gpio_config(&io_config);
 
     ESP_LOGI(TAG, "BMA423 Initialized");
 }
