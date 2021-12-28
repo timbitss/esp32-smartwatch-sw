@@ -264,13 +264,13 @@ void RunTask200Hz(void *parameters)
             time_inactive_ms += 5;
         }
 
-        /* Check if wrist wear interrupt was triggered. */
+        /* Check if wrist wear or single tap interrupt was triggered. */
         bma423_read_int_status(&bma423_int_status, &peripherals.bma);
 
         /**
-         * Reset inactive time if any button press is detected.
+         * Reset inactive time if any activity was detected.
          */
-        if (press_detected || bma423_int_status & BMA423_WRIST_WEAR_INT)
+        if (press_detected || bma423_int_status & (BMA423_SINGLE_TAP_INT | BMA423_WRIST_WEAR_INT))
         {
             time_inactive_ms = 0;
         }
@@ -382,14 +382,14 @@ static void change_state(State next_state)
  */
 static void configure_wakeup_sources()
 {
-    /* Wake up when button 0 is pressed */
-    esp_sleep_enable_ext0_wakeup(BUTTON0_GPIO_PIN, 0);
-
-    /* Wake up when alarm goes off */
+    /* Wake up when RTC alarm is triggered. */
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
     gpio_pulldown_dis(RTC_INTERRUPT_PIN);
     gpio_pullup_en(RTC_INTERRUPT_PIN);
-    esp_sleep_enable_ext1_wakeup((1U << RTC_INTERRUPT_PIN), ESP_EXT1_WAKEUP_ALL_LOW);
+    esp_sleep_enable_ext0_wakeup(RTC_INTERRUPT_PIN, 0);
+
+    /* Wake up when device is tapped or wrist is tilted. */
+    esp_sleep_enable_ext1_wakeup(BMA423_INT1_PIN_MASK, ESP_EXT1_WAKEUP_ALL_LOW);
 }
 
 static void initialize_bma423()
@@ -404,7 +404,7 @@ static void initialize_bma423()
      */
     rslt = bma4_interface_selection(&peripherals.bma, BMA42X_VARIANT, peripherals.i2c_bus);
     bma4_error_codes_print_result("bma4_interface_selection status", rslt);
-    
+
     /* Sensor initialization */
     rslt = bma423_init(&peripherals.bma);
     bma4_error_codes_print_result("bma423_init", rslt);
@@ -421,7 +421,7 @@ static void initialize_bma423()
 
         /* Accelerometer Configuration Setting */
         /* Output data Rate */
-        accel_conf.odr = BMA4_OUTPUT_DATA_RATE_100HZ;
+        accel_conf.odr = BMA4_OUTPUT_DATA_RATE_200HZ;
 
         /* Gravity range of the sensor (+/- 2G, 4G, 8G, 16G) */
         accel_conf.range = BMA4_ACCEL_RANGE_2G;
@@ -448,12 +448,13 @@ static void initialize_bma423()
         rslt = bma4_set_accel_config(&accel_conf, &peripherals.bma);
         bma4_error_codes_print_result("bma4_set_accel_config status", rslt);
 
-        /* Enable single & double tap feature */
-        rslt = bma423_feature_enable(BMA423_WRIST_WEAR, BMA4_ENABLE, &peripherals.bma);
+        /* Enable single tap and wrist wear feature */
+        rslt = bma423_feature_enable(BMA423_SINGLE_TAP | BMA423_WRIST_WEAR, BMA4_ENABLE, &peripherals.bma);
         bma4_error_codes_print_result("bma423_feature_enable status", rslt);
 
-        /* Mapping line interrupt 1 with that of wrist wear feature interrupts */
-        rslt = bma423_map_interrupt(BMA4_INTR1_MAP, BMA423_WRIST_WEAR_INT, BMA4_ENABLE, &peripherals.bma);
+        /* Mapping line interrupt 1 with that of wrist wear and single tap feature interrupts. */
+        rslt = bma423_map_interrupt(BMA4_INTR1_MAP, BMA423_SINGLE_TAP_INT | BMA423_WRIST_WEAR_INT,
+                                    BMA4_ENABLE, &peripherals.bma);
         bma4_error_codes_print_result("bma423_map_interrupt", rslt);
 
         /* Enable output for INT1 pin (active-low, push-pull) */
@@ -467,6 +468,9 @@ static void initialize_bma423()
         bma423AxesRemap.y_axis = 0;
         bma423AxesRemap.z_axis = 2;
         bma423_set_remap_axes(&bma423AxesRemap, &peripherals.bma);
+
+        /* Adjust sensitivity of single tap feature */
+        bma423_single_tap_set_sensitivity(0x05, &peripherals.bma);
 
         ESP_LOGI(TAG, "BMA423 Initialized");
     }

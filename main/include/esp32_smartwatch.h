@@ -20,3 +20,6 @@
 
 // RTC
 #define RTC_INTERRUPT_PIN GPIO_NUM_14
+
+// Accelerometer
+#define BMA423_INT1_PIN_MASK (1U << GPIO_NUM_4)
