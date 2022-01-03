@@ -23,3 +23,6 @@
 
 // Accelerometer
 #define BMA423_INT1_PIN_MASK (1U << GPIO_NUM_4)
+
+// LVGL
+#define LV_TICK_PERIOD_MS 1
