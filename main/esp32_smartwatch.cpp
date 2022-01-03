@@ -15,6 +15,7 @@
 #include "bma4_common.h"
 #include "lvgl.h"
 #include "lvgl_helpers.h"
+#include "LVGL_App.h"
 
 extern "C" void app_main(void);
 
@@ -512,7 +513,7 @@ static void guiTask(void *pvParameter) {
     static lv_color_t *buf2 = NULL;
 #endif
 
-    static lv_disp_buf_t disp_buf;
+    static lv_disp_draw_buf_t disp_buf;
 
     uint32_t size_in_px = DISP_BUF_SIZE;
 
@@ -527,7 +528,7 @@ static void guiTask(void *pvParameter) {
 
     /* Initialize the working buffer depending on the selected display.
      * NOTE: buf2 == NULL when using monochrome displays. */
-    lv_disp_buf_init(&disp_buf, buf1, buf2, size_in_px);
+    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, size_in_px);
 
     lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
@@ -541,7 +542,9 @@ static void guiTask(void *pvParameter) {
     disp_drv.set_px_cb = disp_driver_set_px;
 #endif
 
-    disp_drv.buffer = &disp_buf;
+    disp_drv.draw_buf = &disp_buf;
+    disp_drv.ver_res = 240;
+    disp_drv.hor_res = 240;
     lv_disp_drv_register(&disp_drv);
 
     /* Register an input device when enabled on the menuconfig */
@@ -562,11 +565,8 @@ static void guiTask(void *pvParameter) {
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, LV_TICK_PERIOD_MS * 1000));
 
-    /* Create the demo application */
-    // create_demo_application();
-
-    lv_obj_t* label = lv_label_create(lv_scr_act(), NULL);
-    lv_label_set_text(label, "Hello World!");
+    /* Create the application */
+    LVGL_App();
 
     while (1) {
         /* Delay 1 tick (assumes FreeRTOS tick is 10ms */
@@ -584,7 +584,7 @@ static void guiTask(void *pvParameter) {
 #ifndef CONFIG_LV_TFT_DISPLAY_MONOCHROME
     free(buf2);
 #endif
-    vTaskDelete(NULL);
+    vTaskDelete(nullptr);
 }
 
 static void lv_tick_task(void *arg) {
