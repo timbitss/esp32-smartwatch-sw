@@ -4,3 +4,6 @@
 [submodule "components/lvgl_esp32_drivers"]
 	path = components/lvgl_esp32_drivers
 	url = https://github.com/lvgl/lvgl_esp32_drivers.git
+[submodule "esp32-smartwatch-pcb"]
+	path = esp32-smartwatch-pcb
+	url = https://github.com/timbitss/esp32-smartwatch-pcb

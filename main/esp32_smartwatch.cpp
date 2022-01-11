@@ -32,7 +32,7 @@ static void change_state(State next_state);
 static void configure_wakeup_sources();
 static void initialize_bma423();
 static void lv_tick_task(void *arg);
-static void update_screen(const char* time_str);
+static void update_screen(const char* time_str, const char* alarm_str, bool alarm_enabled);
 
 /**
  * Unique component tag for logging data.
@@ -205,7 +205,7 @@ static void RunTask1Hz(void *parameters)
                  state_names[present_state],
                  alarm_enabled ? "enabled" : "disabled",
                  time_inactive_ms);
-        update_screen(current_time);
+        update_screen(current_time, alarm_time, alarm_enabled);
 
 
         /* Enter deep-sleep if inactive for longer than INACTIVE_TIME_MS and alarm has been cleared. */
@@ -614,9 +614,12 @@ static void lv_tick_task(void *arg) {
  *
  * @param time_str Current time and date.
  */
-static void update_screen(const char* time_str)
+static void update_screen(const char* time_str, const char* alarm_str, bool alarm_enabled)
 {
     xSemaphoreTake(xGuiSemaphore, portMAX_DELAY);
-    lv_label_set_text(label, time_str);
+    lv_label_set_text_fmt(label, "%s\nAlarm: %s\nAlarm %s",
+                          time_str,
+                          alarm_str,
+                          alarm_enabled ? "enabled" : "disabled");
     xSemaphoreGive(xGuiSemaphore);
 }
