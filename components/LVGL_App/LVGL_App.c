@@ -7,7 +7,8 @@
 
 void LVGL_App()
 {
+    /*
     lv_obj_t* label = lv_label_create(lv_scr_act());
-    lv_label_set_text(label, "Hello World!");
-    lv_obj_set_pos(label, 100, 100);
+    lv_label_set_text(label, "1:18:23 PM");
+    lv_obj_set_pos(label, 100, 100); */
 }

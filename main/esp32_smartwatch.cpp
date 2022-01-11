@@ -25,13 +25,14 @@ enum State : uint8_t;
  * Private function prototypes.
  */
 static uint8_t io_read_buttons();
-void RunTask1Hz(void *parameters);
-void RunTask200Hz(void * parameters);
+static void RunTask1Hz(void *parameters);
+static void RunTask200Hz(void * parameters);
+static void guiTask(void *pvParameter);
 static void change_state(State next_state);
 static void configure_wakeup_sources();
 static void initialize_bma423();
 static void lv_tick_task(void *arg);
-static void guiTask(void *pvParameter);
+static void update_screen(const char* time_str);
 
 /**
  * Unique component tag for logging data.
@@ -80,8 +81,14 @@ struct Peripherals_t
 
 /**
  * Time that device was inactive without any button presses or wrist tilt.
+ * Device will enter deep sleep if time_inactive_ms > TIME_INACTIVE_MS.
  */
 static uint32_t time_inactive_ms;
+
+/**
+ *  Display label object.
+ */
+static lv_obj_t* label;
 
 void app_main(void)
 {
@@ -144,26 +151,10 @@ void app_main(void)
 
     rtc.setAlarm1(DateTime(__DATE__, __TIME__) - TimeSpan(1), DS3231_A1_Hour);
 
-    /* Create tasks. */
-    xTaskCreatePinnedToCore(RunTask1Hz,
-                            "RunTask1Hz",
-                            TASK1HZ_STACK_SIZE,
-                            nullptr,
-                            2,
-                            nullptr,
-                            APP_CPU_NUM);
-
-    xTaskCreatePinnedToCore(RunTask200Hz,
-    "RunTask200Hz",
-    TASK200HZ_STACK_SIZE,
-    nullptr,
-    1,
-    nullptr,
-    APP_CPU_NUM);
-
-    /* If you want to use a task to create the graphic, you NEED to create a Pinned task
-  * Otherwise there can be problem such as memory corruption and so on.
-  * NOTE: When not using Wi-Fi nor Bluetooth you can pin the guiTask to core 0 */
+    /*
+     * Create GUI Task.
+     * @note RunTask1Hz and RunTask200Hz are created from the GUI Task.
+     */
     xTaskCreatePinnedToCore(guiTask, "gui", 4096*2, NULL, 0, NULL, 1);
 
     for(;;)
@@ -172,11 +163,11 @@ void app_main(void)
     }
 }
 
-void RunTask1Hz(void *parameters)
+static void RunTask1Hz(void *parameters)
 {
     TickType_t lastWakeTime;
     const TickType_t period_ms = pdMS_TO_TICKS( 1000 );
-    char current_time[25] = {}, alarm_time[25] = {};
+    char current_time[30] = {}, alarm_time[30] = {};
     static const char* state_names[NUM_OF_STATES] = {"NORMAL", "ALARM_ADJUST", "ALARM_FIRED"};
     uint8_t buzzer_flag = 0;
 
@@ -197,6 +188,7 @@ void RunTask1Hz(void *parameters)
             }
         }
 
+        /* Turn on buzzer if alarm was fired and enabled */
         if(present_state == ALARM_FIRED)
         {
             if(buzzer_flag & 0x01) peripherals.buzzer->TurnOnBuzzer();
@@ -213,6 +205,8 @@ void RunTask1Hz(void *parameters)
                  state_names[present_state],
                  alarm_enabled ? "enabled" : "disabled",
                  time_inactive_ms);
+        update_screen(current_time);
+
 
         /* Enter deep-sleep if inactive for longer than INACTIVE_TIME_MS and alarm has been cleared. */
         if(time_inactive_ms >= INACTIVE_TIME_MS && present_state != ALARM_FIRED)
@@ -226,7 +220,7 @@ void RunTask1Hz(void *parameters)
     }
 }
 
-void RunTask200Hz(void *parameters)
+static void RunTask200Hz(void *parameters)
 {
     TickType_t lastWakeTime;
     const TickType_t period_ms = pdMS_TO_TICKS( 5 );
@@ -324,8 +318,10 @@ void RunTask200Hz(void *parameters)
                 }
             }
 
+            /* Reset timers. */
             ESP_LOGI(TAG, "Button 0 released");
             timeheld0_ms = 0;
+            time_inactive_ms = 0;
         }
         if (press_released & BUTTON1_BITMASK)
         {
@@ -359,8 +355,10 @@ void RunTask200Hz(void *parameters)
                 }
             }
 
+            /* Reset timers. */
             ESP_LOGI(TAG, "Button 1 released");
             timeheld1_ms = 0;
+            time_inactive_ms = 0;
         }
 
         vTaskDelayUntil(&lastWakeTime, period_ms);
@@ -497,7 +495,7 @@ static void guiTask(void *pvParameter) {
 
     lv_init();
 
-    /* Initialize SPI or I2C bus used by the drivers */
+    /* Initialize SPI bus used by the drivers */
     lvgl_driver_init();
 
     lv_color_t* buf1 = static_cast<lv_color_t *>(heap_caps_malloc(DISP_BUF_SIZE * sizeof(lv_color_t),
@@ -566,7 +564,25 @@ static void guiTask(void *pvParameter) {
     ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, LV_TICK_PERIOD_MS * 1000));
 
     /* Create the application */
-    LVGL_App();
+    label = lv_label_create(lv_scr_act());
+    lv_obj_set_pos(label, 50, 100);
+
+    /* Create other tasks */
+    xTaskCreatePinnedToCore(RunTask1Hz,
+                            "RunTask1Hz",
+                            TASK1HZ_STACK_SIZE,
+                            nullptr,
+                            2,
+                            nullptr,
+                            APP_CPU_NUM);
+
+    xTaskCreatePinnedToCore(RunTask200Hz,
+                            "RunTask200Hz",
+                            TASK200HZ_STACK_SIZE,
+                            nullptr,
+                            1,
+                            nullptr,
+                            APP_CPU_NUM);
 
     while (1) {
         /* Delay 1 tick (assumes FreeRTOS tick is 10ms */
@@ -591,4 +607,16 @@ static void lv_tick_task(void *arg) {
     (void) arg;
 
     lv_tick_inc(LV_TICK_PERIOD_MS);
+}
+
+/*
+ * Update display with time and date.
+ *
+ * @param time_str Current time and date.
+ */
+static void update_screen(const char* time_str)
+{
+    xSemaphoreTake(xGuiSemaphore, portMAX_DELAY);
+    lv_label_set_text(label, time_str);
+    xSemaphoreGive(xGuiSemaphore);
 }

@@ -739,7 +739,7 @@ void DateTime::timestamp(char* buffer, timestampOpt opt) const
             break;
         default:
             // Full
-            sprintf(buffer, "%u-%02d-%02dT%02d:%02d:%02d", 2000U + yOff, m, d, hh, mm,
+            sprintf(buffer, "D: %u-%02d-%02d T: %02d:%02d:%02d", 2000U + yOff, m, d, hh, mm,
                     ss);
     }
 }
