@@ -1,5 +1,15 @@
 # ESP32 Smartwatch
+
+## Prototype
 ![GIF](./pictures/prototype.gif)
+
+## Schematic
+
+[![Schematic](pictures/esp32-smartwatch.png)](pictures/esp32-smartwatch.pdf)
+
+## PCB
+
+![All layers](pictures/all_layers.PNG)
 
 ### Functional Overview
 
